@@ -32,11 +32,11 @@ class MainTrainer:
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 MIN_STEPS_BETWEEN_SAVES = 5000,
                 stride1 = 1,
-                filterSize1 = 32,
-                numberFilters1 = 4,
+                filterSize1 = 48,
+                numberFilters1 = 10,
                 stride2 = 2,
                 filterSize2 = 64,
-                numberFilters2 = 6,
+                numberFilters2 = 14,
                 stride3 = 2,
                 filterSize3 = 5,
                 numberFilters3 = 18,
@@ -47,6 +47,7 @@ class MainTrainer:
                 filterSize5=5,
                 numberFilters5=12,
                 hidden_layers = 8,
+                hiddenLayerDecayRate = 0.45, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.00005,
                 learning_rate_decay = 1000000 , # Higher gives slower decay
                 networkInputLen = 1024,
@@ -92,7 +93,8 @@ class MainTrainer:
             'networkInputLen' : networkInputLen,
             'graphName': graphName,
             'uniqueSessionNumber' : uniqueSessionNumber,
-            'maxTrainingSamplesInMem': maxTrainingSamplesInMem
+            'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
+            'hiddenLayerDecayRate' :hiddenLayerDecayRate
         }
 
         print(self.params)
@@ -181,10 +183,9 @@ class MainTrainer:
             layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
             print(f"OutputSize after first FC layer: {int(layer.shape[1])}")
 
-
             # Extra fully connected
             for a in range(self.params['hidden_layers']):
-                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.45), self.params['USE_RELU'])
+                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
             self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), defs.quantSteps, False)
