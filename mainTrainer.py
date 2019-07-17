@@ -188,7 +188,7 @@ class MainTrainer:
                 layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
-            self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), defs.quantSteps, False)
+            self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), defs.quantSteps, self.params['USE_RELU'])
             print(f"Created {self.params['hidden_layers']} Fully connected layers...")
 
             # cost functions an optimizers..
@@ -228,7 +228,7 @@ class MainTrainer:
         inferenceCounter = 0
         writeCounter = self.params['networkInputLen'] - 1
         outRawData = np.zeros(soundData["sampleCount"])
-        outRawData[:] = 0.5
+        outRawData[:] = self.audio.center
         done = False
 
         try:
@@ -333,22 +333,28 @@ class MainTrainer:
     # similar to label variance in order for a sound to be
     # good, in combinatino with a low error value.
     #####################################################
-    def calcSuperScore(self, labelVar, infVar, error, step):
+    def calcSuperScore(self, labelVar, infVar, error, fftDiffScore, step):
 
         if step < 5:
             return 0.0
 
         if infVar < 0.00000001:
             infVar  = 0.00000001
+        if labelVar < 0.00000001:
+            labelVar = 0.00000001
 
         retVal = 0.0
 
         try:
-            varDiff = math.fabs(labelVar / infVar)  # Should be = 1 when perfect
-            errSqTimesDiff = error ** 2 * varDiff
+            if (labelVar >= infVar): # varDiff always >= 1, where closest to 1 is the best!
+                varDiff = math.fabs(labelVar / infVar)
+            else:
+                varDiff = math.fabs(infVar / labelVar)
+
+            errSqTimesDiff = error * varDiff * fftDiffScore
             if (errSqTimesDiff) < 0.00000001:
                 errSqTimesDiff = 0.00000001
-            retVal = 1 / errSqTimesDiff
+            retVal = 100 / errSqTimesDiff
         except Exception as ex:
             pass
 
@@ -367,6 +373,7 @@ class MainTrainer:
         superScoreCount = 0
         inputSoundRaw = None
         labelSoundRaw = None
+        fftDiffScore = 20000
 
         soundDataList = self.audio.readAllFilesInDir(defs.WAV_FILE_PATH)
 
@@ -411,7 +418,7 @@ class MainTrainer:
         self.audio.writeSoundToDir(labelSound, defs.WAV_FILE_OUTPUT, "LabelSoundTrain")
         self.audio.writeSoundToDir(inputSoundVal, defs.WAV_FILE_OUTPUT, "InputSoundValidation")
         self.audio.writeSoundToDir(labelSoundVal, defs.WAV_FILE_OUTPUT, "LabelSoundValidation")
-        #self.plotter.plotSoundSimple(labelSound, None, None, None, False, True)
+        #self.plotter.plotSoundSimple(labelSoundVal, None, None, None, False, True)
 
         for r in range(11111111):
 
@@ -453,13 +460,19 @@ class MainTrainer:
 
                         finalOutInfVariance[index] = infOutput
                         finalOutLabelVariance[index] = labelOutput
-                        lastErr = math.fabs(infOutput - labelOutput)
+                        lastErr = 0.95 * ((math.fabs(infOutput - labelOutput))/self.audio.K) # puhh. 0.95 because I wantto compare to old scores....
                         error += lastErr
 
                         quantErrorArray = np.abs(nextOutput - labelBatch[index])
                         errorVariance += np.var(quantErrorArray)
                         rawQuantError += np.average(quantErrorArray)
                         infQuantOutVariance += np.var(nextOutput)
+
+                # Run a shorter inference piece in order to get a error of the FFT over the label vs inference
+                pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, defs.FFT_DiffLength)
+                pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, defs.FFT_DiffLength)
+                infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
+                fftDiffScore = self.audio.soundDiffFFT(infOutSound, pieceOfLabelSound)
 
                 infTime = time.time() - startTime
                 inferenceTime_ms = 1000 * infTime
@@ -473,13 +486,14 @@ class MainTrainer:
                 labelFinalOutVariance = np.var(finalOutLabelVariance)
                 finalOutVarianceQuota = infFinalOutVariance / labelFinalOutVariance
 
-                superScoreList[superScoreCount % len(superScoreList)] = self.calcSuperScore(labelFinalOutVariance, infFinalOutVariance, error, r)
+                superScoreList[superScoreCount % len(superScoreList)] = self.calcSuperScore(labelFinalOutVariance, infFinalOutVariance, error, fftDiffScore, r)
                 superScoreCount += 1
                 superScoreAvg = np.average(superScoreList)
 
                 summary = tf.Summary()
+                summary.value.add(tag='0_superScoreV2', simple_value=superScoreAvg)
                 summary.value.add(tag='1_error', simple_value=error)
-                summary.value.add(tag='0_superScore', simple_value=superScoreAvg)
+                summary.value.add(tag='1_FFT_DiffScore', simple_value=fftDiffScore)
                 summary.value.add(tag='2_finalOutVarianceQuota', simple_value=finalOutVarianceQuota)
                 summary.value.add(tag='4_errorVariance', simple_value=errorVariance)
                 summary.value.add(tag='5_rawQuantError', simple_value=rawQuantError)
@@ -494,7 +508,7 @@ class MainTrainer:
 
                 if superScoreAvg > maxSuperScore:
 
-                    print(f"step: {r} New Superscore: {superScoreAvg:.4f}")
+                    print(f"step: {r} New Superscore: {superScoreAvg:.6f}")
                     maxSuperScore = superScoreAvg
 
                     #
@@ -509,9 +523,13 @@ class MainTrainer:
 
                         pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, inputSoundVal["sampleCount"])
                         pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, labelSoundVal["sampleCount"])
+                        iSt = time.time()
                         infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
+                        iFt = time.time() - iSt
+                        print(f"INFERENCE time for entire validation sound: {iFt:.1f}s. Sound lenght is {infOutSound['trackLengthSec']:.1f} -> {(iFt/infOutSound['trackLengthSec']):.3f} seconds/seconds")
                         self.audio.writeSoundToDir(infOutSound, defs.WAV_FILE_OUTPUT, self.params["uniqueSessionNumber"] + "-" + str(r))
                         self.plotter.plotSoundSimple(pieceOfInputSound, pieceOfLabelSound, infOutSound, audio4=None, useSame=True, blocking=self.blockNextImgPrintOut)
+
             #
             # TRAIN
             #

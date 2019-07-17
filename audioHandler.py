@@ -17,8 +17,14 @@ class AudioHandler:
     ULAWQUANTSTEPS = 32768
     SIXTEENBITMAX = 32768
     UINTMAX=255
-    K = 0.95    #The maximum value of downscaled data. Note that
-                # the value 1.0 is theoretical max of sigmoid!
+
+    # The maximum value and center weight of downscaled data. Note that
+    # the value 1.0 is theoretical max of sigmoid!
+    # Example: K = 0.95, center = 0.5 --> amplitude from 0.05 -> 0.95 centered around 0.5 (typicall sigmoid activation)
+    # Example: K = 1000, center = 600 --> amplitude from 100 -> 1100 centered around 600 (typical RELU activation)
+    K = 1000.0
+    center = K / 2
+
 
     # ############################################################################
     # construct
@@ -269,14 +275,14 @@ class AudioHandler:
     # ############################################################################
     def downScaleAudio(self, upscaled):
 
-        return ((upscaled * AudioHandler.K + AudioHandler.SIXTEENBITMAX)) / (2 * AudioHandler.SIXTEENBITMAX)
+        return ((upscaled * AudioHandler.K) / (2 * AudioHandler.SIXTEENBITMAX)) + AudioHandler.center
 
     # ############################################################################
     # scale up audio from float (0.0 - 1.0) to 16 bit int (-32768 - 32768)
     # ############################################################################
     def upScaleAudio(self, downscaled):
 
-        return ((downscaled * 2 * AudioHandler.SIXTEENBITMAX - AudioHandler.SIXTEENBITMAX) / AudioHandler.K).astype(np.int16)
+        return (((downscaled - AudioHandler.center) * 2 * AudioHandler.SIXTEENBITMAX) / AudioHandler.K).astype('int16')
 
     # ############################################################################
     # returns a piece of sound from a longer sound
@@ -412,6 +418,23 @@ class AudioHandler:
         diff = soundA["data"][0:len] - soundB["data"][0:len]
         # Cast the diff-array to int64, as the summing up of this may overflow standard int32
         return np.sum(np.abs(diff.astype('int64'))) / len
+
+
+    # ############################################################################
+    # Returns a value based of the frequence differences in two sounds
+    # ############################################################################
+    def soundDiffFFT(self, soundA, soundB):
+
+        fftArrayA = fft(soundA["data"])
+        fftArrayB = fft(soundB["data"])
+        fftArrayA = abs(fftArrayA)
+        fftArrayB = abs(fftArrayB)
+
+        diff = fftArrayA[0:soundA['sampleCount']] - fftArrayB[0:soundB['sampleCount']]
+
+        return np.sum(np.abs(diff.astype('int64'))) / soundA['sampleCount']
+
+
 
     # ############################################################################
     # Calculate the average amplitude of a sound

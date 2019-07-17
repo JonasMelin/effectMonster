@@ -9,6 +9,7 @@ class Definitions:
     GRAPH_PATH = 'graph'
     TENSORBOARD_PATH = 'tensorboard'
     FFTAudioWindowLength = 32
+    FFT_DiffLength = 20000
 
 
     if USE_QUANT_OUT:
