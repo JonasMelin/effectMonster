@@ -51,6 +51,7 @@ class MainTrainer:
                 learning_rate = 0.00005,
                 learning_rate_decay = 1000000 , # Higher gives slower decay
                 networkInputLen = 1024,
+                networkOutputLen = 2,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
@@ -91,6 +92,7 @@ class MainTrainer:
             'hidden_layers' : hidden_layers,
             'learning_rate' : learning_rate,
             'networkInputLen' : networkInputLen,
+            'networkOutputLen' : networkOutputLen,
             'graphName': graphName,
             'uniqueSessionNumber' : uniqueSessionNumber,
             'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
@@ -187,12 +189,15 @@ class MainTrainer:
             for a in range(self.params['hidden_layers']):
                 layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
+                if int(layer.shape[1]) < 2 * self.params['networkOutputLen']:
+                    print("Not creating more hidden layers as we are getting close to the number of required output neurons...")
+                    break
 
-            self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), defs.quantSteps, self.params['USE_RELU'])
+            self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
             print(f"Created {self.params['hidden_layers']} Fully connected layers...")
 
             # cost functions an optimizers..
-            self.y_true_FC = tf.placeholder(tf.float32, shape=[None, defs.quantSteps], name='y_trueFC')
+            self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
             global_step = tf.Variable(0, trainable=False)
             learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
 
@@ -235,11 +240,11 @@ class MainTrainer:
             while not done:
                 inputBatch = []
 
-                for e in range(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND']):
+                for e in range(math.floor(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'] / self.params['networkOutputLen'])):
                     nextDataSlize = self.audio.getAPieceOfSound(soundData, inferenceCounter, self.params['networkInputLen'])
                     reshapedDataSlize = nextDataSlize["scaledData"].reshape(self.params['networkInputLen'])
                     inputBatch.append(reshapedDataSlize)
-                    inferenceCounter += 1
+                    inferenceCounter += self.params['networkOutputLen']
                     if inferenceCounter >= (soundData["sampleCount"] - self.params['networkInputLen'] - 1):
                         done = True
                         break
@@ -248,10 +253,8 @@ class MainTrainer:
 
                 outputConvertedBatch = []
                 for nextQSample in arrayOfQuantizedsamples:
-                    if defs.USE_QUANT_OUT:
-                        outputConvertedBatch.append(self.audio.quantArrayToSample(nextQSample))
-                    else:
-                        outputConvertedBatch.append(nextQSample) ## ToDo: Is this really ok??
+                    for i in range(self.params['networkOutputLen']):
+                        outputConvertedBatch.append(nextQSample[i])
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
                 writeCounter += self.params['BATCH_SIZE_INFERENCE_FULL_SOUND']
@@ -291,20 +294,12 @@ class MainTrainer:
                     nextLabelDataSlize = self.audio.getAPieceOfSound(labelSound, sampleStartPos, self.params['networkInputLen'])
 
                 input = nextInputDataSlize["scaledData"]
-                label = np.array(nextLabelDataSlize["scaledData"][defs.sampleToPredict]).reshape(1)
-
-                if defs.USE_QUANT_OUT:
-                    quantArrayLabel = self.audio.sampleToQuantArray(label[0])
-                else:
-                    quantArrayLabel = label
+                label = np.array(nextLabelDataSlize["scaledData"][-self.params['networkOutputLen']:]).reshape(self.params['networkOutputLen'])
+                quantArrayLabel = label
 
                 reshapedInput = input.reshape(-1, self.params['networkInputLen'])
-                reshapedLabel = label.reshape(-1, 1)
-
-                if defs.USE_QUANT_OUT:
-                    reshapedQuantArrayLabel = quantArrayLabel.reshape(-1, defs.quantSteps)
-                else:
-                    reshapedQuantArrayLabel = None
+                reshapedLabel = label.reshape(-1, self.params['networkOutputLen'])
+                reshapedQuantArrayLabel = None
 
                 # Python is not really multi threadded! So, yield for the main thread..
                 if r % 50 == 0:
@@ -436,37 +431,28 @@ class MainTrainer:
 
                 with self.globalLock:
                     inputBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkInputLen']))
-                    labelBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], defs.quantSteps))
-                    finalOutInfVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE']))
-                    finalOutLabelVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE']))
+                    labelBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkOutputLen']))
+                    finalOutInfVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']))
+                    finalOutLabelVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']))
 
                     for p in range(self.params['BATCH_INF_SIZE']):
                         randomIndex = random.randint(0, len(self.validationData) - 1)
                         inputBatch[p] = self.validationData[randomIndex]["input"]
-                        if defs.USE_QUANT_OUT:
-                            labelBatch[p] = self.validationData[randomIndex]["quantArrayLabel"]
-                        else:
-                            labelBatch[p] = self.validationData[randomIndex]["label"]
+                        labelBatch[p] = self.validationData[randomIndex]["label"]
 
                     outputArray = self.getFCOutput(inputBatch)
 
+                    ccc = 0
+
                     for index, nextOutput in enumerate(outputArray):
-                        if defs.USE_QUANT_OUT:
-                            infOutput = self.audio.quantArrayToSample(nextOutput)
-                            labelOutput = self.audio.quantArrayToSample(labelBatch[index])
-                        else:
-                            infOutput = nextOutput[0]
-                            labelOutput = labelBatch[index][0]
-
-                        finalOutInfVariance[index] = infOutput
-                        finalOutLabelVariance[index] = labelOutput
-                        lastErr = 0.95 * ((math.fabs(infOutput - labelOutput))/self.audio.K) # puhh. 0.95 because I wantto compare to old scores....
-                        error += lastErr
-
-                        quantErrorArray = np.abs(nextOutput - labelBatch[index])
-                        errorVariance += np.var(quantErrorArray)
-                        rawQuantError += np.average(quantErrorArray)
-                        infQuantOutVariance += np.var(nextOutput)
+                        for y in range(self.params['networkOutputLen']):
+                            infOutput = nextOutput[y]
+                            labelOutput = labelBatch[index][y]
+                            finalOutInfVariance[ccc] = infOutput
+                            finalOutLabelVariance[ccc] = labelOutput
+                            lastErr = 0.95 * ((math.fabs(infOutput - labelOutput)) / self.audio.K)  # puhh. 0.95 because I wantto compare to old scores....
+                            error += lastErr
+                            ccc += 1
 
                 # Run a shorter inference piece in order to get a error of the FFT over the label vs inference
                 pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, defs.FFT_DiffLength)
@@ -478,10 +464,10 @@ class MainTrainer:
                 inferenceTime_ms = 1000 * infTime
                 inferenceTimePerMainLoop_ms = inferenceTime_ms / self.params['STATS_EVERY']
                 trainTimePerMainLoop_s = trainTimePerSample_us * self.params['BATCH_SIZE'] / 1000000
-                error /= self.params['BATCH_INF_SIZE']
-                errorVariance /= self.params['BATCH_INF_SIZE']
-                rawQuantError /= self.params['BATCH_INF_SIZE']
-                infQuantOutVariance /= self.params['BATCH_INF_SIZE']
+                error /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
+                errorVariance /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
+                rawQuantError /= self.params['BATCH_INF_SIZE'] # ? Obsolete this!
+                infQuantOutVariance /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
                 infFinalOutVariance = np.var(finalOutInfVariance)
                 labelFinalOutVariance = np.var(finalOutLabelVariance)
                 finalOutVarianceQuota = infFinalOutVariance / labelFinalOutVariance
@@ -533,19 +519,15 @@ class MainTrainer:
             #
             # TRAIN
             #
-
             with self.globalLock:
                 inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkInputLen']))
-                labelBatch = np.zeros(shape=(self.params['BATCH_SIZE'],defs.quantSteps))
+                labelBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkOutputLen']))
 
                 for p in range(self.params['BATCH_SIZE']):
 
                     randomIndex = random.randint(0, len(self.trainingData) - 1)
                     inputBatch[p] = self.trainingData[randomIndex]["input"]
-                    if defs.USE_QUANT_OUT:
-                        labelBatch[p] = self.trainingData[randomIndex]["quantArrayLabel"]
-                    else:
-                        labelBatch[p] = self.trainingData[randomIndex]["label"] ## Todo: ok?
+                    labelBatch[p] = self.trainingData[randomIndex]["label"]
 
             startTime = time.time()
 
@@ -557,8 +539,6 @@ class MainTrainer:
             trainTimePerSample_us = 1000000* (trainTime / self.params['BATCH_SIZE'])
 
         self.sessionFC.close()
-
-
 
 
     #####################################################
