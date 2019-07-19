@@ -33,10 +33,10 @@ class MainTrainer:
                 MIN_STEPS_BETWEEN_SAVES = 5000,
                 stride1 = 1,
                 filterSize1 = 48,
-                numberFilters1 = 10,
+                numberFilters1 = 8,
                 stride2 = 2,
                 filterSize2 = 64,
-                numberFilters2 = 14,
+                numberFilters2 = 12,
                 stride3 = 2,
                 filterSize3 = 5,
                 numberFilters3 = 18,
@@ -46,12 +46,12 @@ class MainTrainer:
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 8,
-                hiddenLayerDecayRate = 0.45, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                hidden_layers = 2,
+                hiddenLayerDecayRate = 0.5, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.00005,
                 learning_rate_decay = 1000000 , # Higher gives slower decay
                 networkInputLen = 1024,
-                networkOutputLen = 2,
+                networkOutputLen = 10,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
@@ -182,7 +182,7 @@ class MainTrainer:
             #w2 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
             #layer = tf.nn.sigmoid(tf.matmul(layerCNN, w1) + tf.matmul(layerFC, w2))
 
-            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
+            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.2), self.params['USE_RELU'])
             print(f"OutputSize after first FC layer: {int(layer.shape[1])}")
 
             # Extra fully connected
@@ -231,7 +231,7 @@ class MainTrainer:
     def runInferenceOnSoundSampleBySample(self, soundData):
 
         inferenceCounter = 0
-        writeCounter = self.params['networkInputLen'] - 1
+        writeCounter = self.params['networkInputLen'] - self.params['networkOutputLen']
         outRawData = np.zeros(soundData["sampleCount"])
         outRawData[:] = self.audio.center
         done = False
@@ -544,7 +544,7 @@ class MainTrainer:
     #####################################################
     # Function
     #####################################################
-    def newConvLayer(self, input, stride, num_input_channels, filter_size, num_filters, use_relu=True, aggregatedStride=1):
+    def newConvLayer(self, input, stride, num_input_channels, filter_size, num_filters, use_relu=True, aggregatedStride=1, dilations=None):
 
         weights = self.new_weights([filter_size, num_input_channels, num_filters])
         biases = self.new_biases(length=num_filters)

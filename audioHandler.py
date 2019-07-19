@@ -327,7 +327,7 @@ class AudioHandler:
         }
 
     # ############################################################################
-    # Converts an output from inference into a sound dictionary
+    # ...
     # ############################################################################
     def appendAndOverlapSounds(self, soundA, soundtoAppend, overlap):
 
