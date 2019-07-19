@@ -51,7 +51,7 @@ class MainTrainer:
                 learning_rate = 0.00005,
                 learning_rate_decay = 1000000 , # Higher gives slower decay
                 networkInputLen = 1024,
-                networkOutputLen = 10,
+                networkOutputLen = 2,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
@@ -101,6 +101,7 @@ class MainTrainer:
 
         print(self.params)
 
+        self.branchNetworkData = []
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
         self.fullGraphPath = os.path.join(defs.GRAPH_PATH, self.params['graphName'])
         self.defineFCModel()
@@ -111,6 +112,7 @@ class MainTrainer:
         self.globalLock = Lock()
         self.blockNextImgPrintOut = False
         self.slowMode = False
+
 
         try:
             os.mkdir(self.tensorboardFullPath)
@@ -193,23 +195,33 @@ class MainTrainer:
                     print("Not creating more hidden layers as we are getting close to the number of required output neurons...")
                     break
 
-            self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
-            print(f"Created {self.params['hidden_layers']} Fully connected layers...")
+            finalCost = None
 
-            # cost functions an optimizers..
-            self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
+            for z in range(self.params['networkOutputLen']):
+                dataDict = {}
+                self.branchNetworkData.append(dataDict)
+
+                dataDict['y_modelFC'] = self.new_fc_layer(layer,  int(layer.shape[1]), 1, self.params['USE_RELU'])
+                print(f"Created {self.params['hidden_layers']} Fully connected layers...")
+
+                # cost functions an optimizers..
+                dataDict['y_true_FC'] = tf.placeholder(tf.float32, shape=[None, 1], name='y_trueFC_'+str(z))
+
+
+                dataDict['cost'] = tf.reduce_mean(tf.square(dataDict['y_modelFC'] - dataDict['y_true_FC']))
+
+                if finalCost is None:
+                    finalCost = dataDict['cost']
+                else:
+                    finalCost = finalCost + dataDict['cost']
+
+                # Tensorboard
+                tf.summary.scalar("1_loss_" + str(z), dataDict['cost'])
+
             global_step = tf.Variable(0, trainable=False)
             learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
+            self.optimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step)
 
-            #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.y_modelFC, labels=self.y_true_FC))
-            #optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-            #self.optimizerFC = optimizer.minimize(cost)
-
-            cost = tf.reduce_mean(tf.square(self.y_modelFC - self.y_true_FC))
-            self.optimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
-
-            # Tensorboard
-            tf.summary.scalar("1_loss", cost)
             tf.summary.scalar("3_learning_rate", learning_rate)
             self.merged_summary_op = tf.summary.merge_all()
             self.summary_writer = tf.summary.FileWriter(self.tensorboardFullPath)
@@ -252,9 +264,23 @@ class MainTrainer:
                 arrayOfQuantizedsamples = self.getFCOutput(inputBatch)
 
                 outputConvertedBatch = []
-                for nextQSample in arrayOfQuantizedsamples:
-                    for i in range(self.params['networkOutputLen']):
-                        outputConvertedBatch.append(nextQSample[i])
+
+                # NEW
+
+                for batch, nextOutput in enumerate(
+                        arrayOfQuantizedsamples[0]):  # Loop over each batch for a single network branch,
+                    for y in range(
+                            self.params['networkOutputLen']):  # loop over each branch output, e.g. sample 1, 2, 3...
+                        nextSample = arrayOfQuantizedsamples[y][batch]
+                        outputConvertedBatch.append(nextSample)
+
+                # ...
+
+                #for nextQSample in arrayOfQuantizedsamples[0]:
+                #    for i in range(self.params['networkOutputLen']):
+                #        outputConvertedBatch.append(nextQSample[i])
+
+
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
                 writeCounter += self.params['BATCH_SIZE_INFERENCE_FULL_SOUND']
@@ -272,7 +298,7 @@ class MainTrainer:
     #####################################################
     def threadFuncPrepareData(self, inputSound, labelSound, dataOutput, name="", continouslyReplaceWithNewData=False):
 
-        sampleSteps = inputSound["sampleCount"] - 1 - self.params['networkInputLen']
+        sampleSteps = inputSound["sampleCount"] - 1 - self.params['networkInputLen'] - self.params['networkOutputLen']
 
         if continouslyReplaceWithNewData:
             loopCount = self.params['maxTrainingSamplesInMem']
@@ -295,11 +321,16 @@ class MainTrainer:
 
                 input = nextInputDataSlize["scaledData"]
                 label = np.array(nextLabelDataSlize["scaledData"][-self.params['networkOutputLen']:]).reshape(self.params['networkOutputLen'])
-                quantArrayLabel = label
+
+                branchLabels = []
+                for e in range(self.params['networkOutputLen']):
+                    nextLabel = label[e]
+                    nextLabel = nextLabel.reshape(-1, 1) ## With this algorith we alway only have one output per network branch...
+                    dataDict = {'y_true_FC': self.branchNetworkData[e]['y_true_FC'], 'labelValue': nextLabel}
+                    branchLabels.append(dataDict)
 
                 reshapedInput = input.reshape(-1, self.params['networkInputLen'])
                 reshapedLabel = label.reshape(-1, self.params['networkOutputLen'])
-                reshapedQuantArrayLabel = None
 
                 # Python is not really multi threadded! So, yield for the main thread..
                 if r % 50 == 0:
@@ -307,7 +338,7 @@ class MainTrainer:
                 time.sleep(0)
 
                 with self.globalLock:
-                    finalData = {'input': reshapedInput, 'label': reshapedLabel, 'quantArrayLabel': reshapedQuantArrayLabel}
+                    finalData = {'input': reshapedInput, 'label': reshapedLabel, 'branchLabels': branchLabels}
 
                     if len(dataOutput) < loopCount:
                         dataOutput.append(finalData)
@@ -444,10 +475,13 @@ class MainTrainer:
 
                     ccc = 0
 
-                    for index, nextOutput in enumerate(outputArray):
-                        for y in range(self.params['networkOutputLen']):
-                            infOutput = nextOutput[y]
-                            labelOutput = labelBatch[index][y]
+                    # Dont even try to understand this...
+                    for batch, nextOutput in enumerate(outputArray[0]): # Loop over each batch for a single network branch,
+                        for y in range(self.params['networkOutputLen']): # loop over each branch output, e.g. sample 1, 2, 3...
+                            infOutput = outputArray[y][batch]
+
+                            #infOutput = nextOutput[0]
+                            labelOutput = labelBatch[batch][y]  ## corresponds to this label, you see: index = batch, y =
                             finalOutInfVariance[ccc] = infOutput
                             finalOutLabelVariance[ccc] = labelOutput
                             lastErr = 0.95 * ((math.fabs(infOutput - labelOutput)) / self.audio.K)  # puhh. 0.95 because I wantto compare to old scores....
@@ -519,22 +553,32 @@ class MainTrainer:
             #
             # TRAIN
             #
+
+            ###############  DEV
             with self.globalLock:
-                inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkInputLen']))
-                labelBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkOutputLen']))
+                inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'], self.params['networkInputLen']))
+                labelBatchOfBatches = np.empty(self.params['networkOutputLen'], dtype=object)
+
+                for ix in range(self.params['networkOutputLen']):
+                    labelBatchOfBatches[ix] = np.zeros(shape=(self.params['BATCH_SIZE'], 1))
 
                 for p in range(self.params['BATCH_SIZE']):
-
                     randomIndex = random.randint(0, len(self.trainingData) - 1)
-                    inputBatch[p] = self.trainingData[randomIndex]["input"]
-                    labelBatch[p] = self.trainingData[randomIndex]["label"]
+
+                    nextInputData = self.trainingData[randomIndex]["input"]
+                    nextLabelData = self.trainingData[randomIndex]["branchLabels"]
+                    inputBatch[p] = nextInputData
+
+                    for ix in range(self.params['networkOutputLen']):
+                        labelBatchOfBatches[ix][p] = nextLabelData[ix]['labelValue']
 
             startTime = time.time()
 
             if self.slowMode:
                 time.sleep(5)
 
-            self.train(inputBatch, labelBatch, r)
+            self.train(inputBatch, labelBatchOfBatches, r)
+
             trainTime = time.time() - startTime
             trainTimePerSample_us = 1000000* (trainTime / self.params['BATCH_SIZE'])
 
@@ -618,13 +662,18 @@ class MainTrainer:
 
         assert self.sessionFC is not None and self.graphFC is not None
 
-        feed_dict_batch = {self.xFC: X_training, self.y_true_FC: Y_training}
+        #feed_dict_batch = {self.xFC: X_training, self.y_true_FC: Y_training}  # ToDo: Add multiple here
+
+        feed_dict_batch = {self.xFC: X_training}
+
+        for y in range(self.params['networkOutputLen']):
+            feed_dict_batch[self.branchNetworkData[y]['y_true_FC']] = Y_training[y]
 
         with self.graphFC.as_default() as g:
 
             _, summary = self.sessionFC.run([self.optimizerFC, self.merged_summary_op], feed_dict=feed_dict_batch)
 
-            if iteration%100 == 0:
+            if iteration % 100 == 0:
                 self.summary_writer.add_summary(summary, iteration)
 
     #####################################################
@@ -635,8 +684,13 @@ class MainTrainer:
 
         feed_dict = {self.xFC: dataX}
 
+        outputs = []
+
+        for y in range(self.params['networkOutputLen']):
+            outputs.append(self.branchNetworkData[y]['y_modelFC'])
+
         with self.graphFC.as_default() as g:
-            return self.sessionFC.run(self.y_modelFC, feed_dict=feed_dict)
+            return self.sessionFC.run(outputs, feed_dict=feed_dict)
 
 
 # ############################################################################
