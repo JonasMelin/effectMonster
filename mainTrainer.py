@@ -53,7 +53,7 @@ class MainTrainer:
                 networkInputLen = 1024,
                 networkOutputLen = 10,
                 graphName = 'latest',
-                maxTrainingSamplesInMem=100000,
+                maxTrainingSamplesInMem=50000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -154,78 +154,87 @@ class MainTrainer:
         self.sessionFC = tf.Session(graph=self.graphFC, config=tf.ConfigProto(gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)))
 
         with self.graphFC.as_default() as g:
+            with tf.variable_scope('shared') as scope:
 
-            # Input!
-            self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
+                # Input!
+                self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
 
-            # CNN 1d 2 layers, 1 fully connected layer
-            layerCNN, filterCount, aggregatedStride = self.newConvLayer(self.xFC, self.params['stride1'], 1, self.params['filterSize1'], self.params['numberFilters1'], self.params['USE_RELU'])
-            print(f"Shared: OutputSize after 1st CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-            layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
-            print(f"Shared: OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride3'], self.params['numberFilters2'], self.params['filterSize3'], self.params['numberFilters3'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 3rd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride4'], self.params['numberFilters3'], self.params['filterSize4'], self.params['numberFilters4'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 4th CNN: {math.floor((filterCount) * self.params['networkInputLen'] / aggregatedStride)}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride5'], self.params['numberFilters4'], self.params['filterSize5'], self.params['numberFilters5'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 5th CNN: {math.floor((filterCount) * self.params['networkInputLen'] / aggregatedStride)}")
-
-
-            #Flatten before pushing into fully connected
-            layerCNN = tf.reshape(layerCNN, [-1, math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)])
-
-            # matmul the CNN output with the input! skip-through!
-            #layerCNN = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), self.params['networkInputLen'],  self.params['USE_RELU'])
-
-            #layerFC = self.new_fc_layer(self.xFC, int(self.xFC.shape[1]), math.floor(int(self.xFC.shape[1]) * 1.0), self.params['USE_RELU'])
-            #layerFC = self.new_fc_layer(layerFC, int(layerFC.shape[1]), self.params['networkInputLen'], self.params['USE_RELU'])
-
-            #w1 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
-            #w2 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
-            #layer = tf.nn.sigmoid(tf.matmul(layerCNN, w1) + tf.matmul(layerFC, w2))
-
-            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
-            print(f"Shared: OutputSize after first FC layer: {int(layer.shape[1])}")
-            layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
-            print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
-            layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
-            print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
+                # CNN 1d 2 layers, 1 fully connected layer
+                layerCNN, filterCount, aggregatedStride = self.newConvLayer(self.xFC, self.params['stride1'], 1, self.params['filterSize1'], self.params['numberFilters1'], self.params['USE_RELU'])
+                print(f"Shared: OutputSize after 1st CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
+                layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
+                print(f"Shared: OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
+                #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride3'], self.params['numberFilters2'], self.params['filterSize3'], self.params['numberFilters3'], self.params['USE_RELU'], aggregatedStride)
+                #print(f"OutputSize after 3rd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
+                #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride4'], self.params['numberFilters3'], self.params['filterSize4'], self.params['numberFilters4'], self.params['USE_RELU'], aggregatedStride)
+                #print(f"OutputSize after 4th CNN: {math.floor((filterCount) * self.params['networkInputLen'] / aggregatedStride)}")
+                #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride5'], self.params['numberFilters4'], self.params['filterSize5'], self.params['numberFilters5'], self.params['USE_RELU'], aggregatedStride)
+                #print(f"OutputSize after 5th CNN: {math.floor((filterCount) * self.params['networkInputLen'] / aggregatedStride)}")
 
 
+                #Flatten before pushing into fully connected
+                layerCNN = tf.reshape(layerCNN, [-1, math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)])
+
+                # matmul the CNN output with the input! skip-through!
+                #layerCNN = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), self.params['networkInputLen'],  self.params['USE_RELU'])
+
+                #layerFC = self.new_fc_layer(self.xFC, int(self.xFC.shape[1]), math.floor(int(self.xFC.shape[1]) * 1.0), self.params['USE_RELU'])
+                #layerFC = self.new_fc_layer(layerFC, int(layerFC.shape[1]), self.params['networkInputLen'], self.params['USE_RELU'])
+
+                #w1 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
+                #w2 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
+                #layer = tf.nn.sigmoid(tf.matmul(layerCNN, w1) + tf.matmul(layerFC, w2))
+
+                layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
+                print(f"Shared: OutputSize after first FC layer: {int(layer.shape[1])}")
+                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
+                print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
+                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
+                print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
+
+
+            variableScopeName = "private"
             finalCost = None
 
             for z in range(self.params['networkOutputLen']):
-                dataDict = {}
-                self.branchNetworkData.append(dataDict)
 
-                dataDict['y_modelFC'] = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 1), self.params['USE_RELU'])
-                print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
-                dataDict['y_modelFC'] = self.new_fc_layer(dataDict['y_modelFC'], int(dataDict['y_modelFC'].shape[1]), math.floor(int(dataDict['y_modelFC'].shape[1]) * 0.25), self.params['USE_RELU'])
-                print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
-                dataDict['y_modelFC'] = self.new_fc_layer(dataDict['y_modelFC'], int(dataDict['y_modelFC'].shape[1]), 1, self.params['USE_RELU'])
-                print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
+                tmpVarScopeName = variableScopeName + str(z)
+                if z is 0:
+                    tmpVarScopeName += "shared"  # If output 0, then we want to be able to train this network also when training the shared network.
 
-                # cost functions an optimizers..
-                dataDict['y_true_FC'] = tf.placeholder(tf.float32, shape=[None, 1], name='y_trueFC_'+str(z))
-                dataDict['cost'] = tf.reduce_mean(tf.square(dataDict['y_modelFC'] - dataDict['y_true_FC']))
+                with tf.variable_scope(tmpVarScopeName) as scope:
+                    dataDict = {}
+                    self.branchNetworkData.append(dataDict)
 
-                if finalCost is None:
-                    finalCost = dataDict['cost']
-                else:
-                    finalCost = finalCost + dataDict['cost']
+                    dataDict['y_modelFC'] = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 1), self.params['USE_RELU'])
+                    print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
+                    dataDict['y_modelFC'] = self.new_fc_layer(dataDict['y_modelFC'], int(dataDict['y_modelFC'].shape[1]), math.floor(int(dataDict['y_modelFC'].shape[1]) * 0.25), self.params['USE_RELU'])
+                    print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
+                    dataDict['y_modelFC'] = self.new_fc_layer(dataDict['y_modelFC'], int(dataDict['y_modelFC'].shape[1]), 1, self.params['USE_RELU'])
+                    print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
 
-                # Tensorboard
-                tf.summary.scalar("1_loss_" + str(z), dataDict['cost'])
+                    # cost functions an optimizers..
+                    dataDict['y_true_FC'] = tf.placeholder(tf.float32, shape=[None, 1], name='y_trueFC_'+str(z))
+                    dataDict['cost'] = tf.reduce_mean(tf.square(dataDict['y_modelFC'] - dataDict['y_true_FC']))
 
-            #t_vars = tf.trainable_variables()
-            #d_vars = [var for var in t_vars if 'dis' in var.name]
-            #g_vars = [var for var in t_vars if 'gen' in var.name]
-            #trainer_d = tf.train.RMSPropOptimizer(learning_rate=2e-4).minimize(d_loss, var_list=d_vars)
-            #trainer_g = tf.train.RMSPropOptimizer(learning_rate=2e-4).minimize(g_loss, var_list=g_vars)
+                    if finalCost is None:
+                        finalCost = dataDict['cost']
+                    else:
+                        finalCost = finalCost + dataDict['cost']
+
+                    # Tensorboard
+                    tf.summary.scalar("loss_" + str(z), dataDict['cost'])
+
+            t_vars = tf.trainable_variables()
+            shared_vars = [var for var in t_vars if 'shared' in var.name]
+            private_vars = [var for var in t_vars if 'private' in var.name]
+            all_vars = [var for var in t_vars if ('private' in var.name or 'shared' in var.name)]
 
             global_step = tf.Variable(0, trainable=False)
             learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
-            self.optimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step)
+            self.optimizerFC_shared = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step, var_list=shared_vars)
+            self.optimizerFC_private = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step, var_list=private_vars)
+            self.optimizerFC_all = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step, var_list=all_vars)
 
             tf.summary.scalar("3_learning_rate", learning_rate)
 
@@ -270,13 +279,11 @@ class MainTrainer:
                 arrayOfQuantizedsamples = self.getFCOutput(inputBatch)
                 outputConvertedBatch = []
 
-                for batch, nextOutput in enumerate(
-                        arrayOfQuantizedsamples[0]):  # Loop over each batch for a single network branch,
-                    for y in range(
-                            self.params['networkOutputLen']):  # loop over each branch output, e.g. sample 1, 2, 3...
-                        nextSample = arrayOfQuantizedsamples[y][batch]
-                        outputConvertedBatch.append(nextSample)
+                for batch, nextOutput in enumerate(arrayOfQuantizedsamples[0]):  # Loop over each batch for a single network branch,
+                    for y in range(self.params['networkOutputLen']):  # loop over each branch output, e.g. sample 1, 2, 3...
 
+                        nextSample = arrayOfQuantizedsamples[self.params['networkOutputLen'] - y - 1][batch]  # Note: outneuron[0] is the last sample in time. You have to swap the order here!
+                        outputConvertedBatch.append(nextSample)
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
                 writeCounter += self.params['BATCH_SIZE_INFERENCE_FULL_SOUND']
@@ -290,7 +297,6 @@ class MainTrainer:
     #####################################################
     # Load all training data into RAM, but keep training
     # during this process...
-    #
     #####################################################
     def threadFuncPrepareData(self, inputSound, labelSound, dataOutput, name="", continouslyReplaceWithNewData=False):
 
@@ -320,7 +326,7 @@ class MainTrainer:
 
                 branchLabels = []
                 for e in range(self.params['networkOutputLen']):
-                    nextLabel = label[e]
+                    nextLabel = label[self.params['networkOutputLen'] - e - 1] # Invert the sample order to match the network
                     nextLabel = nextLabel.reshape(-1, 1) ## With this algorith we alway only have one output per network branch...
                     dataDict = {'y_true_FC': self.branchNetworkData[e]['y_true_FC'], 'labelValue': nextLabel}
                     branchLabels.append(dataDict)
@@ -332,6 +338,9 @@ class MainTrainer:
                 if r % 50 == 0:
                     time.sleep(0.001)
                 time.sleep(0)
+
+                if not continouslyReplaceWithNewData: # Label data. Dont need this. Only for training...
+                    branchLabels = None
 
                 with self.globalLock:
                     finalData = {'input': reshapedInput, 'label': reshapedLabel, 'branchLabels': branchLabels}
@@ -474,7 +483,7 @@ class MainTrainer:
                     # Dont even try to understand this...
                     for batch, nextOutput in enumerate(outputArray[0]): # Loop over each batch for a single network branch,
                         for y in range(self.params['networkOutputLen']): # loop over each branch output, e.g. sample 1, 2, 3...
-                            infOutput = outputArray[y][batch]
+                            infOutput = outputArray[self.params['networkOutputLen'] - y - 1][batch]
 
                             #infOutput = nextOutput[0]
                             labelOutput = labelBatch[batch][y]  ## corresponds to this label, you see: index = batch, y =
@@ -549,8 +558,6 @@ class MainTrainer:
             #
             # TRAIN
             #
-
-            ###############  DEV
             with self.globalLock:
                 inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'], self.params['networkInputLen']))
                 labelBatchOfBatches = np.empty(self.params['networkOutputLen'], dtype=object)
@@ -573,7 +580,7 @@ class MainTrainer:
             if self.slowMode:
                 time.sleep(5)
 
-            self.train(inputBatch, labelBatchOfBatches, r)
+            self.train(inputBatch, labelBatchOfBatches, r, self.optimizerFC_all)
 
             trainTime = time.time() - startTime
             trainTimePerSample_us = 1000000* (trainTime / self.params['BATCH_SIZE'])
@@ -654,7 +661,7 @@ class MainTrainer:
     #####################################################
     # learn by history
     #####################################################
-    def train(self, X_training, Y_training, iteration):
+    def train(self, X_training, Y_training, iteration, optimizer):
 
         assert self.sessionFC is not None and self.graphFC is not None
 
@@ -667,7 +674,7 @@ class MainTrainer:
 
         with self.graphFC.as_default() as g:
 
-            _, summary = self.sessionFC.run([self.optimizerFC, self.merged_summary_op], feed_dict=feed_dict_batch)
+            _, summary = self.sessionFC.run([optimizer, self.merged_summary_op], feed_dict=feed_dict_batch)
 
             if iteration % 100 == 0:
                 self.summary_writer.add_summary(summary, iteration)
@@ -682,7 +689,7 @@ class MainTrainer:
 
         outputs = []
 
-        for y in range(self.params['networkOutputLen']):
+        for y in range(len(self.branchNetworkData)):
             outputs.append(self.branchNetworkData[y]['y_modelFC'])
 
         with self.graphFC.as_default() as g:
