@@ -46,14 +46,14 @@ class MainTrainer:
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 2,
-                hiddenLayerDecayRate = 0.5, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                hidden_layers = 1,
+                hiddenLayerDecayRate = 1.0, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.00005,
                 learning_rate_decay = 1000000 , # Higher gives slower decay
                 networkInputLen = 1024,
-                networkOutputLen = 2,
+                networkOutputLen = 10,
                 graphName = 'latest',
-                maxTrainingSamplesInMem=250000,
+                maxTrainingSamplesInMem=100000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -160,9 +160,9 @@ class MainTrainer:
 
             # CNN 1d 2 layers, 1 fully connected layer
             layerCNN, filterCount, aggregatedStride = self.newConvLayer(self.xFC, self.params['stride1'], 1, self.params['filterSize1'], self.params['numberFilters1'], self.params['USE_RELU'])
-            print(f"OutputSize after 1st CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
+            print(f"Shared: OutputSize after 1st CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
             layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
-            print(f"OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
+            print(f"Shared: OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
             #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride3'], self.params['numberFilters2'], self.params['filterSize3'], self.params['numberFilters3'], self.params['USE_RELU'], aggregatedStride)
             #print(f"OutputSize after 3rd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
             #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride4'], self.params['numberFilters3'], self.params['filterSize4'], self.params['numberFilters4'], self.params['USE_RELU'], aggregatedStride)
@@ -184,16 +184,13 @@ class MainTrainer:
             #w2 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
             #layer = tf.nn.sigmoid(tf.matmul(layerCNN, w1) + tf.matmul(layerFC, w2))
 
-            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.2), self.params['USE_RELU'])
-            print(f"OutputSize after first FC layer: {int(layer.shape[1])}")
+            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
+            print(f"Shared: OutputSize after first FC layer: {int(layer.shape[1])}")
+            layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
+            print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
+            layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
+            print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
 
-            # Extra fully connected
-            for a in range(self.params['hidden_layers']):
-                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
-                print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
-                if int(layer.shape[1]) < 2 * self.params['networkOutputLen']:
-                    print("Not creating more hidden layers as we are getting close to the number of required output neurons...")
-                    break
 
             finalCost = None
 
@@ -201,13 +198,15 @@ class MainTrainer:
                 dataDict = {}
                 self.branchNetworkData.append(dataDict)
 
-                dataDict['y_modelFC'] = self.new_fc_layer(layer,  int(layer.shape[1]), 1, self.params['USE_RELU'])
-                print(f"Created {self.params['hidden_layers']} Fully connected layers...")
+                dataDict['y_modelFC'] = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 1), self.params['USE_RELU'])
+                print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
+                dataDict['y_modelFC'] = self.new_fc_layer(dataDict['y_modelFC'], int(dataDict['y_modelFC'].shape[1]), math.floor(int(dataDict['y_modelFC'].shape[1]) * 0.25), self.params['USE_RELU'])
+                print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
+                dataDict['y_modelFC'] = self.new_fc_layer(dataDict['y_modelFC'], int(dataDict['y_modelFC'].shape[1]), 1, self.params['USE_RELU'])
+                print(f"OutputSize after next FC layer: {int(dataDict['y_modelFC'].shape[1])} (neuron pos {z})")
 
                 # cost functions an optimizers..
                 dataDict['y_true_FC'] = tf.placeholder(tf.float32, shape=[None, 1], name='y_trueFC_'+str(z))
-
-
                 dataDict['cost'] = tf.reduce_mean(tf.square(dataDict['y_modelFC'] - dataDict['y_true_FC']))
 
                 if finalCost is None:
@@ -218,11 +217,18 @@ class MainTrainer:
                 # Tensorboard
                 tf.summary.scalar("1_loss_" + str(z), dataDict['cost'])
 
+            #t_vars = tf.trainable_variables()
+            #d_vars = [var for var in t_vars if 'dis' in var.name]
+            #g_vars = [var for var in t_vars if 'gen' in var.name]
+            #trainer_d = tf.train.RMSPropOptimizer(learning_rate=2e-4).minimize(d_loss, var_list=d_vars)
+            #trainer_g = tf.train.RMSPropOptimizer(learning_rate=2e-4).minimize(g_loss, var_list=g_vars)
+
             global_step = tf.Variable(0, trainable=False)
             learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
             self.optimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step)
 
             tf.summary.scalar("3_learning_rate", learning_rate)
+
             self.merged_summary_op = tf.summary.merge_all()
             self.summary_writer = tf.summary.FileWriter(self.tensorboardFullPath)
 
@@ -262,10 +268,7 @@ class MainTrainer:
                         break
 
                 arrayOfQuantizedsamples = self.getFCOutput(inputBatch)
-
                 outputConvertedBatch = []
-
-                # NEW
 
                 for batch, nextOutput in enumerate(
                         arrayOfQuantizedsamples[0]):  # Loop over each batch for a single network branch,
@@ -273,13 +276,6 @@ class MainTrainer:
                             self.params['networkOutputLen']):  # loop over each branch output, e.g. sample 1, 2, 3...
                         nextSample = arrayOfQuantizedsamples[y][batch]
                         outputConvertedBatch.append(nextSample)
-
-                # ...
-
-                #for nextQSample in arrayOfQuantizedsamples[0]:
-                #    for i in range(self.params['networkOutputLen']):
-                #        outputConvertedBatch.append(nextQSample[i])
-
 
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
