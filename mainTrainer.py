@@ -30,13 +30,13 @@ class MainTrainer:
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 10000,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
-                MIN_STEPS_BETWEEN_SAVES = 5000,
+                MIN_STEPS_BETWEEN_SAVES = 1000,
                 stride1 = 1,
                 filterSize1 = 48,
-                numberFilters1 = 8,
+                numberFilters1 = 4,
                 stride2 = 2,
                 filterSize2 = 64,
-                numberFilters2 = 12,
+                numberFilters2 = 6,
                 stride3 = 2,
                 filterSize3 = 5,
                 numberFilters3 = 18,
@@ -51,7 +51,7 @@ class MainTrainer:
                 learning_rate = 0.00005,
                 learning_rate_decay = 1000000 , # Higher gives slower decay
                 networkInputLen = 1024,
-                networkOutputLen = 10,
+                networkOutputLen = 20,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=50000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
@@ -115,7 +115,8 @@ class MainTrainer:
         self.trainingState = []
         #self.trainingState.append({'activated': False, 'whenActive': 0, 'activeNetworkOutputLen': 1, 'optimizer': self.optimizerFC_shared_onlyCost0})
         #self.trainingState.append({'activated': False, 'whenActive': 6000, 'activeNetworkOutputLen': self.params['networkOutputLen'], 'optimizer': self.optimizerFC_private})
-        self.trainingState.append({'activated': False, 'whenActive': 0, 'activeNetworkOutputLen': self.params['networkOutputLen'], 'optimizer': self.optimizerFC_all})
+        self.trainingState.append({'activated': False, 'whenActive': 0, 'activeNetworkOutputLen': self.params['networkOutputLen'], 'optimizer': self.optimizerFC_all, 'useSameLabel': True})
+        self.trainingState.append({'activated': False, 'whenActive': 6000, 'activeNetworkOutputLen': self.params['networkOutputLen'], 'optimizer': self.optimizerFC_all, 'useSameLabel': False})
         #self.trainingState.append({'activated': False, 'whenActive': 48000, 'activeNetworkOutputLen': self.params['networkOutputLen'],  'optimizer': self.optimizerFC_private})
 
 
@@ -192,10 +193,9 @@ class MainTrainer:
 
                 layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
                 print(f"Shared: OutputSize after first FC layer: {int(layer.shape[1])}")
-                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
+                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(self.params['networkInputLen']), self.params['USE_RELU'])
                 print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
-                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * 0.5), self.params['USE_RELU'])
-                print(f"Shared: OutputSize after next FC layer: {int(layer.shape[1])}")
+
 
 
             variableScopeName = "private"
@@ -596,7 +596,10 @@ class MainTrainer:
                     inputBatch[p] = nextInputData
 
                     for ix in range(self.params['networkOutputLen']):
-                        labelBatchOfBatches[ix][p] = nextLabelData[ix]
+                        if dynamicTrainingParams['useSameLabel']:
+                            labelBatchOfBatches[ix][p] = nextLabelData[0]
+                        else:
+                            labelBatchOfBatches[ix][p] = nextLabelData[ix]
 
             startTime = time.time()
 
