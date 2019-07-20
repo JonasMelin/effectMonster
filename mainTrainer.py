@@ -33,10 +33,10 @@ class MainTrainer:
                 MIN_STEPS_BETWEEN_SAVES = 4000,
                 stride1 = 1,
                 filterSize1 = 48,
-                numberFilters1 = 6,
+                numberFilters1 = 12,
                 stride2 = 2,
                 filterSize2 = 64,
-                numberFilters2 = 8,
+                numberFilters2 = 18,
                 stride3 = 2,
                 filterSize3 = 5,
                 numberFilters3 = 18,
@@ -51,10 +51,11 @@ class MainTrainer:
                 learning_rate = 0.000025,
                 learning_rate_decay = 250000 , # Higher gives slower decay
                 networkInputLen = 1024,
-                networkOutputLen = 20,
+                networkOutputLen = 50,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
+                inferenceOverlap = 10,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -98,6 +99,7 @@ class MainTrainer:
             'graphName': graphName,
             'uniqueSessionNumber' : uniqueSessionNumber,
             'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
+            'inferenceOverlap' : inferenceOverlap,
             'hiddenLayerDecayRate' :hiddenLayerDecayRate
         }
 
@@ -184,7 +186,7 @@ class MainTrainer:
             #w2 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
             #layer = tf.nn.sigmoid(tf.matmul(layerCNN, w1) + tf.matmul(layerFC, w2))
 
-            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.2), self.params['USE_RELU'])
+            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
             print(f"OutputSize after first FC layer: {int(layer.shape[1])}")
 
             # Extra fully connected
@@ -192,13 +194,13 @@ class MainTrainer:
                 layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
-            layer = self.new_fc_layer(layer, int(layer.shape[1]), self.params['encoderBullsEyeSize'], self.params['USE_RELU'])
-            print(f"OutputSize after bullsEye FC layer: {int(layer.shape[1])}")
+            #layer = self.new_fc_layer(layer, int(layer.shape[1]), self.params['encoderBullsEyeSize'], self.params['USE_RELU'])
+            #print(f"OutputSize after bullsEye FC layer: {int(layer.shape[1])}")
 
-            layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
-            print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
-            layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
-            print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
+            #layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
+            #print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
+            #layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
+            #print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
             self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
             print(f"Created {self.params['hidden_layers']} Fully connected layers...")
@@ -233,7 +235,6 @@ class MainTrainer:
 
     #####################################################
     # Runs inference with sliding window over an entire sound.
-    # This function is for the step-one-sample algorithm
     #####################################################
     def runInferenceOnSoundSampleBySample(self, soundData):
 
@@ -243,6 +244,8 @@ class MainTrainer:
         outRawData[:] = self.audio.center
         done = False
 
+        assert self.params['networkOutputLen'] > self.params['inferenceOverlap']
+
         try:
             while not done:
                 inputBatch = []
@@ -251,7 +254,7 @@ class MainTrainer:
                     nextDataSlize = self.audio.getAPieceOfSound(soundData, inferenceCounter, self.params['networkInputLen'])
                     reshapedDataSlize = nextDataSlize["scaledData"].reshape(self.params['networkInputLen'])
                     inputBatch.append(reshapedDataSlize)
-                    inferenceCounter += self.params['networkOutputLen']
+                    inferenceCounter += self.params['networkOutputLen'] - self.params['inferenceOverlap']
                     if inferenceCounter >= (soundData["sampleCount"] - self.params['networkInputLen'] - 1):
                         done = True
                         break
@@ -260,11 +263,18 @@ class MainTrainer:
 
                 outputConvertedBatch = []
                 for nextQSample in arrayOfQuantizedsamples:
-                    for i in range(self.params['networkOutputLen']):
-                        outputConvertedBatch.append(nextQSample[i])
+
+                    if self.params['inferenceOverlap'] is 0:
+                        # No overlap... Just copy the data from inference
+                        for i in range(self.params['networkOutputLen']):
+                            outputConvertedBatch.append(nextQSample[i])
+                    else:
+                        # Overlap!
+                        outputConvertedBatch = self.audio.overlapRawData(outputConvertedBatch, nextQSample, self.params['inferenceOverlap'])
+
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
-                writeCounter += self.params['BATCH_SIZE_INFERENCE_FULL_SOUND']
+                writeCounter += len(outputConvertedBatch) - self.params['inferenceOverlap']
 
 
         except Exception as ex:

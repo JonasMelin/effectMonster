@@ -22,7 +22,7 @@ class AudioHandler:
     # the value 1.0 is theoretical max of sigmoid!
     # Example: K = 0.95, center = 0.5 --> amplitude from 0.05 -> 0.95 centered around 0.5 (typicall sigmoid activation)
     # Example: K = 1000, center = 600 --> amplitude from 100 -> 1100 centered around 600 (typical RELU activation)
-    K = 1000.0
+    K = 100000.0
     center = K / 2
 
 
@@ -402,6 +402,39 @@ class AudioHandler:
             "trackLengthSec": sound["trackLengthSec"],
             "scaling": 1.0
         }
+
+    # ############################################################################
+    # No fancy sound stuff. working on raw data. Using another algorithm...
+    # A = Standard python array
+    # B = typically numpy... or Standard python is fine..
+    # ############################################################################
+    def overlapRawData(self, soundA, soundB, overlap):
+
+        if len(soundA) < overlap:  # Start of sound. Nothing to append to...
+            for a in range(len(soundB)) :
+                soundA.append(soundB[a])
+            return soundA
+
+        scalerStepSize = 1
+        scalerA = overlap - (scalerStepSize / 2)
+        scalerB = scalerStepSize / 2
+
+        # Mix the two sounds together...
+        for a in range(overlap):
+            soundASample = soundA[-overlap + a]
+            soundBSample = soundB[a]
+            soundASample = soundASample * scalerA
+            soundBSample = soundBSample * scalerB
+            soundA[-overlap + a] = ((soundASample + soundBSample) / overlap).astype('float32')
+            scalerA -= scalerStepSize
+            scalerB += scalerStepSize
+
+        # Append the rest..
+        for a in range(len(soundB) - overlap):
+            soundA.append(soundB[a + overlap])
+
+        return soundA
+
 
     # ############################################################################
     # Use this function to get e.g loss between two sounds..
