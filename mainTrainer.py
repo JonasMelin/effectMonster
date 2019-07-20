@@ -25,18 +25,18 @@ class MainTrainer:
                 disable_gpu = False,
                 per_process_gpu_memory_fraction = 0.85,
                 USE_RELU = True,  # False => sigmoid
-                BATCH_SIZE = 750,  # Batch size for training.
+                BATCH_SIZE = 100,  # Batch size for training.
                 BATCH_INF_SIZE = 1000,  # When running inference for stats purpose, how large batch to the GPU
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 10000,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
-                MIN_STEPS_BETWEEN_SAVES = 5000,
+                MIN_STEPS_BETWEEN_SAVES = 4000,
                 stride1 = 1,
                 filterSize1 = 48,
-                numberFilters1 = 8,
+                numberFilters1 = 6,
                 stride2 = 2,
                 filterSize2 = 64,
-                numberFilters2 = 12,
+                numberFilters2 = 8,
                 stride3 = 2,
                 filterSize3 = 5,
                 numberFilters3 = 18,
@@ -46,12 +46,13 @@ class MainTrainer:
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 2,
-                hiddenLayerDecayRate = 0.5, #Each hidden layer will be this size compared to previous, 0.45 = 45%
-                learning_rate = 0.00005,
-                learning_rate_decay = 1000000 , # Higher gives slower decay
+                hidden_layers = 3,
+                hiddenLayerDecayRate = 0.33, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                learning_rate = 0.000025,
+                learning_rate_decay = 250000 , # Higher gives slower decay
                 networkInputLen = 1024,
-                networkOutputLen = 10,
+                networkOutputLen = 20,
+                encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
@@ -91,6 +92,7 @@ class MainTrainer:
             'numberFilters5': numberFilters5,
             'hidden_layers' : hidden_layers,
             'learning_rate' : learning_rate,
+            'encoderBullsEyeSize' : encoderBullsEyeSize,
             'networkInputLen' : networkInputLen,
             'networkOutputLen' : networkOutputLen,
             'graphName': graphName,
@@ -189,9 +191,14 @@ class MainTrainer:
             for a in range(self.params['hidden_layers']):
                 layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
-                if int(layer.shape[1]) < 2 * self.params['networkOutputLen']:
-                    print("Not creating more hidden layers as we are getting close to the number of required output neurons...")
-                    break
+
+            layer = self.new_fc_layer(layer, int(layer.shape[1]), self.params['encoderBullsEyeSize'], self.params['USE_RELU'])
+            print(f"OutputSize after bullsEye FC layer: {int(layer.shape[1])}")
+
+            layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
+            print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
+            layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
+            print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
             self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
             print(f"Created {self.params['hidden_layers']} Fully connected layers...")
@@ -319,7 +326,6 @@ class MainTrainer:
                 print(f"{name} data preparation completed. Everything loaded into RAM! {r} examples loaded")
                 break
             else:
-                print("Added a batch with new fresh training samples.. Taking a tiny break and letting the network train..")
                 time.sleep(30) # Take a little break until we continue to replace the training data with new samples.
 
     #####################################################
@@ -417,15 +423,18 @@ class MainTrainer:
 
         for r in range(11111111):
 
+            if r < 0:
+                sameOutput = True
+            else:
+                sameOutput = False
+
             if r % math.floor(self.params['STATS_EVERY']) is 0:
 
                 #
                 # GREATE METRICS TO TENSORBOARD
                 #
                 error = 0
-                rawQuantError = 0
-                errorVariance = 0
-                infQuantOutVariance = 0
+                generatorPrecisionError = 0
                 startTime = time.time()
 
 
@@ -445,14 +454,18 @@ class MainTrainer:
                     ccc = 0
 
                     for index, nextOutput in enumerate(outputArray):
+                        tmpGeneratorPrecisionVariance = np.zeros(shape=(self.params['networkOutputLen']))
                         for y in range(self.params['networkOutputLen']):
                             infOutput = nextOutput[y]
+                            tmpGeneratorPrecisionVariance[y] += infOutput
                             labelOutput = labelBatch[index][y]
                             finalOutInfVariance[ccc] = infOutput
                             finalOutLabelVariance[ccc] = labelOutput
                             lastErr = 0.95 * ((math.fabs(infOutput - labelOutput)) / self.audio.K)  # puhh. 0.95 because I wantto compare to old scores....
                             error += lastErr
                             ccc += 1
+
+                        generatorPrecisionError += np.var(tmpGeneratorPrecisionVariance)
 
                 # Run a shorter inference piece in order to get a error of the FFT over the label vs inference
                 pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, defs.FFT_DiffLength)
@@ -465,26 +478,26 @@ class MainTrainer:
                 inferenceTimePerMainLoop_ms = inferenceTime_ms / self.params['STATS_EVERY']
                 trainTimePerMainLoop_s = trainTimePerSample_us * self.params['BATCH_SIZE'] / 1000000
                 error /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
-                errorVariance /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
-                rawQuantError /= self.params['BATCH_INF_SIZE'] # ? Obsolete this!
-                infQuantOutVariance /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
                 infFinalOutVariance = np.var(finalOutInfVariance)
                 labelFinalOutVariance = np.var(finalOutLabelVariance)
                 finalOutVarianceQuota = infFinalOutVariance / labelFinalOutVariance
+                generatorPrecisionError /= self.params['BATCH_INF_SIZE']
 
                 superScoreList[superScoreCount % len(superScoreList)] = self.calcSuperScore(labelFinalOutVariance, infFinalOutVariance, error, fftDiffScore, r)
                 superScoreCount += 1
                 superScoreAvg = np.average(superScoreList)
 
                 summary = tf.Summary()
+                if sameOutput and r >= 1000:
+                    summary.value.add(tag='0_generatorPrecisionError', simple_value=generatorPrecisionError)
+
+                if r > 1000:
+                    summary.value.add(tag='7_infFinalOutVariance', simple_value=infFinalOutVariance)
+                    summary.value.add(tag='2_finalOutVarianceQuota', simple_value=finalOutVarianceQuota)
+                    summary.value.add(tag='1_FFT_DiffScore', simple_value=fftDiffScore)
+                    summary.value.add(tag='1_error', simple_value=error)
+
                 summary.value.add(tag='0_superScoreV2', simple_value=superScoreAvg)
-                summary.value.add(tag='1_error', simple_value=error)
-                summary.value.add(tag='1_FFT_DiffScore', simple_value=fftDiffScore)
-                summary.value.add(tag='2_finalOutVarianceQuota', simple_value=finalOutVarianceQuota)
-                summary.value.add(tag='4_errorVariance', simple_value=errorVariance)
-                summary.value.add(tag='5_rawQuantError', simple_value=rawQuantError)
-                summary.value.add(tag='6_infQuantOutVariance', simple_value=infQuantOutVariance)
-                summary.value.add(tag='7_infFinalOutVariance', simple_value=infFinalOutVariance)
                 summary.value.add(tag='8_labelFinalOutVariance', simple_value=labelFinalOutVariance)
                 summary.value.add(tag='9_trainTimePerSample_us', simple_value=trainTimePerSample_us)
                 summary.value.add(tag='9_inferenceTime_ms', simple_value=inferenceTime_ms)
@@ -494,7 +507,7 @@ class MainTrainer:
 
                 if superScoreAvg > maxSuperScore:
 
-                    print(f"step: {r} New Superscore: {superScoreAvg:.6f}")
+                    print(f"step: {r} New Superscore: {superScoreAvg:.6f}, generatorPrecisionError: {generatorPrecisionError:.4f}")
                     maxSuperScore = superScoreAvg
 
                     #
@@ -519,6 +532,8 @@ class MainTrainer:
             #
             # TRAIN
             #
+
+
             with self.globalLock:
                 inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkInputLen']))
                 labelBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkOutputLen']))
@@ -528,6 +543,14 @@ class MainTrainer:
                     randomIndex = random.randint(0, len(self.trainingData) - 1)
                     inputBatch[p] = self.trainingData[randomIndex]["input"]
                     labelBatch[p] = self.trainingData[randomIndex]["label"]
+
+            if sameOutput:
+                # Re-write the training data so that all outputs are the same..
+                for nextSampleData in labelBatch:
+                    firstSample = nextSampleData[0]
+                    for ix in range(len(nextSampleData)):
+                        nextSampleData[ix] = firstSample
+
 
             startTime = time.time()
 
