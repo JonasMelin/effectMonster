@@ -112,6 +112,11 @@ class MainTrainer:
         self.globalLock = Lock()
         self.blockNextImgPrintOut = False
         self.slowMode = False
+        self.trainingState = []
+        #self.trainingState.append({'activated': False, 'whenActive': 0, 'activeNetworkOutputLen': 1, 'optimizer': self.optimizerFC_shared_onlyCost0})
+        #self.trainingState.append({'activated': False, 'whenActive': 6000, 'activeNetworkOutputLen': self.params['networkOutputLen'], 'optimizer': self.optimizerFC_private})
+        self.trainingState.append({'activated': False, 'whenActive': 0, 'activeNetworkOutputLen': self.params['networkOutputLen'], 'optimizer': self.optimizerFC_all})
+        #self.trainingState.append({'activated': False, 'whenActive': 48000, 'activeNetworkOutputLen': self.params['networkOutputLen'],  'optimizer': self.optimizerFC_private})
 
 
         try:
@@ -216,6 +221,7 @@ class MainTrainer:
                     # cost functions an optimizers..
                     dataDict['y_true_FC'] = tf.placeholder(tf.float32, shape=[None, 1], name='y_trueFC_'+str(z))
                     dataDict['cost'] = tf.reduce_mean(tf.square(dataDict['y_modelFC'] - dataDict['y_true_FC']))
+                    dataDict['number'] = z
 
                     if finalCost is None:
                         finalCost = dataDict['cost']
@@ -225,16 +231,16 @@ class MainTrainer:
                     # Tensorboard
                     tf.summary.scalar("loss_" + str(z), dataDict['cost'])
 
+
             t_vars = tf.trainable_variables()
-            shared_vars = [var for var in t_vars if 'shared' in var.name]
             private_vars = [var for var in t_vars if 'private' in var.name]
             all_vars = [var for var in t_vars if ('private' in var.name or 'shared' in var.name)]
 
-            global_step = tf.Variable(0, trainable=False)
-            learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
-            self.optimizerFC_shared = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step, var_list=shared_vars)
-            self.optimizerFC_private = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step, var_list=private_vars)
-            self.optimizerFC_all = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=global_step, var_list=all_vars)
+            self.global_step = tf.Variable(0, trainable=False)
+            learning_rate = tf.train.exponential_decay(self.params['learning_rate'], self.global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
+            self.optimizerFC_shared_onlyCost0 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.branchNetworkData[0]['cost'], global_step=self.global_step, var_list=all_vars, name="optimizerFC_shared_onlyCost0")
+            self.optimizerFC_private = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=self.global_step, var_list=private_vars, name='optimizerFC_private')
+            self.optimizerFC_all = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(finalCost, global_step=self.global_step, var_list=all_vars, name='optimizerFC_all')
 
             tf.summary.scalar("3_learning_rate", learning_rate)
 
@@ -255,10 +261,10 @@ class MainTrainer:
     # Runs inference with sliding window over an entire sound.
     # This function is for the step-one-sample algorithm
     #####################################################
-    def runInferenceOnSoundSampleBySample(self, soundData):
+    def runInferenceOnSoundSampleBySample(self, soundData, activeNetworkOutputLen):
 
         inferenceCounter = 0
-        writeCounter = self.params['networkInputLen'] - self.params['networkOutputLen']
+        writeCounter = self.params['networkInputLen'] - activeNetworkOutputLen
         outRawData = np.zeros(soundData["sampleCount"])
         outRawData[:] = self.audio.center
         done = False
@@ -267,11 +273,11 @@ class MainTrainer:
             while not done:
                 inputBatch = []
 
-                for e in range(math.floor(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'] / self.params['networkOutputLen'])):
+                for e in range(math.floor(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'] / activeNetworkOutputLen)):
                     nextDataSlize = self.audio.getAPieceOfSound(soundData, inferenceCounter, self.params['networkInputLen'])
                     reshapedDataSlize = nextDataSlize["scaledData"].reshape(self.params['networkInputLen'])
                     inputBatch.append(reshapedDataSlize)
-                    inferenceCounter += self.params['networkOutputLen']
+                    inferenceCounter += activeNetworkOutputLen
                     if inferenceCounter >= (soundData["sampleCount"] - self.params['networkInputLen'] - 1):
                         done = True
                         break
@@ -280,9 +286,9 @@ class MainTrainer:
                 outputConvertedBatch = []
 
                 for batch, nextOutput in enumerate(arrayOfQuantizedsamples[0]):  # Loop over each batch for a single network branch,
-                    for y in range(self.params['networkOutputLen']):  # loop over each branch output, e.g. sample 1, 2, 3...
+                    for y in range(activeNetworkOutputLen):  # loop over each branch output, e.g. sample 1, 2, 3...
 
-                        nextSample = arrayOfQuantizedsamples[self.params['networkOutputLen'] - y - 1][batch]  # Note: outneuron[0] is the last sample in time. You have to swap the order here!
+                        nextSample = arrayOfQuantizedsamples[activeNetworkOutputLen - y - 1][batch]  # Note: outneuron[0] is the last sample in time. You have to swap the order here!
                         outputConvertedBatch.append(nextSample)
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
@@ -328,8 +334,7 @@ class MainTrainer:
                 for e in range(self.params['networkOutputLen']):
                     nextLabel = label[self.params['networkOutputLen'] - e - 1] # Invert the sample order to match the network
                     nextLabel = nextLabel.reshape(-1, 1) ## With this algorith we alway only have one output per network branch...
-                    dataDict = {'y_true_FC': self.branchNetworkData[e]['y_true_FC'], 'labelValue': nextLabel}
-                    branchLabels.append(dataDict)
+                    branchLabels.append(nextLabel)
 
                 reshapedInput = input.reshape(-1, self.params['networkInputLen'])
                 reshapedLabel = label.reshape(-1, self.params['networkOutputLen'])
@@ -355,7 +360,6 @@ class MainTrainer:
                 print(f"{name} data preparation completed. Everything loaded into RAM! {r} examples loaded")
                 break
             else:
-                print("Added a batch with new fresh training samples.. Taking a tiny break and letting the network train..")
                 time.sleep(30) # Take a little break until we continue to replace the training data with new samples.
 
     #####################################################
@@ -391,6 +395,23 @@ class MainTrainer:
 
         return retVal
 
+    #####################################################
+    # get dynamic parameters...
+    #####################################################
+    def getDynamicTrainingParams(self, r):
+
+        retVal = {}
+
+        for y in range(len(self.trainingState)):
+            nextParamSet = self.trainingState[y]
+            if r >= nextParamSet['whenActive']:
+                retVal = nextParamSet
+
+        if not retVal['activated']:
+            retVal['activated'] = True
+            print(f"------------------\n step: {r} Activating new training mode! {retVal}\n------------------")
+
+        return retVal
 
     #####################################################
     # Train a network
@@ -453,6 +474,8 @@ class MainTrainer:
 
         for r in range(11111111):
 
+            dynamicTrainingParams = self.getDynamicTrainingParams(r)
+
             if r % math.floor(self.params['STATS_EVERY']) is 0:
 
                 #
@@ -468,8 +491,8 @@ class MainTrainer:
                 with self.globalLock:
                     inputBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkInputLen']))
                     labelBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkOutputLen']))
-                    finalOutInfVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']))
-                    finalOutLabelVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']))
+                    finalOutInfVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * dynamicTrainingParams['activeNetworkOutputLen']))
+                    finalOutLabelVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * dynamicTrainingParams['activeNetworkOutputLen']))
 
                     for p in range(self.params['BATCH_INF_SIZE']):
                         randomIndex = random.randint(0, len(self.validationData) - 1)
@@ -482,8 +505,8 @@ class MainTrainer:
 
                     # Dont even try to understand this...
                     for batch, nextOutput in enumerate(outputArray[0]): # Loop over each batch for a single network branch,
-                        for y in range(self.params['networkOutputLen']): # loop over each branch output, e.g. sample 1, 2, 3...
-                            infOutput = outputArray[self.params['networkOutputLen'] - y - 1][batch]
+                        for y in range(dynamicTrainingParams['activeNetworkOutputLen']): # loop over each branch output, e.g. sample 1, 2, 3...
+                            infOutput = outputArray[dynamicTrainingParams['activeNetworkOutputLen'] - y - 1][batch]
 
                             #infOutput = nextOutput[0]
                             labelOutput = labelBatch[batch][y]  ## corresponds to this label, you see: index = batch, y =
@@ -496,17 +519,17 @@ class MainTrainer:
                 # Run a shorter inference piece in order to get a error of the FFT over the label vs inference
                 pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, defs.FFT_DiffLength)
                 pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, defs.FFT_DiffLength)
-                infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
+                infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound, dynamicTrainingParams['activeNetworkOutputLen'])
                 fftDiffScore = self.audio.soundDiffFFT(infOutSound, pieceOfLabelSound)
 
                 infTime = time.time() - startTime
                 inferenceTime_ms = 1000 * infTime
                 inferenceTimePerMainLoop_ms = inferenceTime_ms / self.params['STATS_EVERY']
                 trainTimePerMainLoop_s = trainTimePerSample_us * self.params['BATCH_SIZE'] / 1000000
-                error /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
-                errorVariance /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
+                error /= self.params['BATCH_INF_SIZE'] * dynamicTrainingParams['activeNetworkOutputLen']
+                errorVariance /= self.params['BATCH_INF_SIZE'] * dynamicTrainingParams['activeNetworkOutputLen']
                 rawQuantError /= self.params['BATCH_INF_SIZE'] # ? Obsolete this!
-                infQuantOutVariance /= self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']
+                infQuantOutVariance /= self.params['BATCH_INF_SIZE'] * dynamicTrainingParams['activeNetworkOutputLen']
                 infFinalOutVariance = np.var(finalOutInfVariance)
                 labelFinalOutVariance = np.var(finalOutLabelVariance)
                 finalOutVarianceQuota = infFinalOutVariance / labelFinalOutVariance
@@ -533,7 +556,7 @@ class MainTrainer:
 
                 if superScoreAvg > maxSuperScore:
 
-                    print(f"step: {r} New Superscore: {superScoreAvg:.6f}")
+                    print(f"step: {r} New Superscore: {superScoreAvg:.6f} activeNetworkOutputLen: {dynamicTrainingParams['activeNetworkOutputLen']}")
                     maxSuperScore = superScoreAvg
 
                     #
@@ -549,7 +572,7 @@ class MainTrainer:
                         pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, inputSoundVal["sampleCount"])
                         pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, labelSoundVal["sampleCount"])
                         iSt = time.time()
-                        infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
+                        infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound, dynamicTrainingParams['activeNetworkOutputLen'])
                         iFt = time.time() - iSt
                         print(f"INFERENCE time for entire validation sound: {iFt:.1f}s. Sound lenght is {infOutSound['trackLengthSec']:.1f} -> {(iFt/infOutSound['trackLengthSec']):.3f} seconds/seconds")
                         self.audio.writeSoundToDir(infOutSound, defs.WAV_FILE_OUTPUT, self.params["uniqueSessionNumber"] + "-" + str(r))
@@ -573,14 +596,14 @@ class MainTrainer:
                     inputBatch[p] = nextInputData
 
                     for ix in range(self.params['networkOutputLen']):
-                        labelBatchOfBatches[ix][p] = nextLabelData[ix]['labelValue']
+                        labelBatchOfBatches[ix][p] = nextLabelData[ix]
 
             startTime = time.time()
 
             if self.slowMode:
                 time.sleep(5)
 
-            self.train(inputBatch, labelBatchOfBatches, r, self.optimizerFC_all)
+            self.train(inputBatch, labelBatchOfBatches, r, dynamicTrainingParams['optimizer'])
 
             trainTime = time.time() - startTime
             trainTimePerSample_us = 1000000* (trainTime / self.params['BATCH_SIZE'])
@@ -665,11 +688,9 @@ class MainTrainer:
 
         assert self.sessionFC is not None and self.graphFC is not None
 
-        #feed_dict_batch = {self.xFC: X_training, self.y_true_FC: Y_training}  # ToDo: Add multiple here
-
         feed_dict_batch = {self.xFC: X_training}
 
-        for y in range(self.params['networkOutputLen']):
+        for y in range(len(Y_training)):
             feed_dict_batch[self.branchNetworkData[y]['y_true_FC']] = Y_training[y]
 
         with self.graphFC.as_default() as g:
