@@ -30,13 +30,13 @@ class MainTrainer:
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 10000,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
-                MIN_STEPS_BETWEEN_SAVES = 4000,
+                MIN_STEPS_BETWEEN_SAVES = 6000,
                 stride1 = 1,
                 filterSize1 = 48,
-                numberFilters1 = 12,
-                stride2 = 2,
+                numberFilters1 = 8,
+                stride2 = 4,
                 filterSize2 = 64,
-                numberFilters2 = 18,
+                numberFilters2 = 16,
                 stride3 = 2,
                 filterSize3 = 5,
                 numberFilters3 = 18,
@@ -46,16 +46,17 @@ class MainTrainer:
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 3,
-                hiddenLayerDecayRate = 0.33, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                hidden_layers = 2,
+                hiddenLayerDecayRate = 0.35, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.000025,
                 learning_rate_decay = 250000 , # Higher gives slower decay
-                networkInputLen = 1024,
-                networkOutputLen = 50,
+                networkInputLen = 1224,
+                networkOutputLen = 60,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
                 inferenceOverlap = 10,
+                lowPassFilterSteps = 2,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -100,6 +101,7 @@ class MainTrainer:
             'uniqueSessionNumber' : uniqueSessionNumber,
             'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
             'inferenceOverlap' : inferenceOverlap,
+            'lowPassFilterSteps': lowPassFilterSteps,
             'hiddenLayerDecayRate' :hiddenLayerDecayRate
         }
 
@@ -246,6 +248,9 @@ class MainTrainer:
 
         assert self.params['networkOutputLen'] > self.params['inferenceOverlap']
 
+        totTimeStart = time.time()
+        infTimeOnlyTot = 0
+
         try:
             while not done:
                 inputBatch = []
@@ -259,7 +264,9 @@ class MainTrainer:
                         done = True
                         break
 
+                st = time.time()
                 arrayOfQuantizedsamples = self.getFCOutput(inputBatch)
+                infTimeOnlyTot += time.time() - st
 
                 outputConvertedBatch = []
                 for nextQSample in arrayOfQuantizedsamples:
@@ -279,7 +286,15 @@ class MainTrainer:
 
         except Exception as ex:
             pass
-        return self.audio.createSoundFromInferenceOutput(outRawData, sampleRate=soundData["sampleRate"])
+
+        postProcessStart = time.time()
+        soundOutput = self.audio.createSoundFromInferenceOutput(outRawData, sampleRate=soundData["sampleRate"])
+        lowPassFiltered = self.audio.lowPassFilter(soundOutput, self.params['lowPassFilterSteps'])
+        postProcessTime = time.time() - postProcessStart
+        totTime = time.time() - totTimeStart
+        print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(totTime / soundData['trackLengthSec']):.3f} seconds/seconds")
+
+        return lowPassFiltered
 
 
     #####################################################
@@ -498,8 +513,8 @@ class MainTrainer:
                 superScoreAvg = np.average(superScoreList)
 
                 summary = tf.Summary()
-                if sameOutput and r >= 1000:
-                    summary.value.add(tag='0_generatorPrecisionError', simple_value=generatorPrecisionError)
+                #if sameOutput and r >= 1000:
+                #    summary.value.add(tag='0_generatorPrecisionError', simple_value=generatorPrecisionError)
 
                 if r > 1000:
                     summary.value.add(tag='7_infFinalOutVariance', simple_value=infFinalOutVariance)
@@ -532,10 +547,7 @@ class MainTrainer:
 
                         pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, inputSoundVal["sampleCount"])
                         pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, labelSoundVal["sampleCount"])
-                        iSt = time.time()
                         infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
-                        iFt = time.time() - iSt
-                        print(f"INFERENCE time for entire validation sound: {iFt:.1f}s. Sound lenght is {infOutSound['trackLengthSec']:.1f} -> {(iFt/infOutSound['trackLengthSec']):.3f} seconds/seconds")
                         self.audio.writeSoundToDir(infOutSound, defs.WAV_FILE_OUTPUT, self.params["uniqueSessionNumber"] + "-" + str(r))
                         self.plotter.plotSoundSimple(pieceOfInputSound, pieceOfLabelSound, infOutSound, audio4=None, useSame=True, blocking=self.blockNextImgPrintOut)
 

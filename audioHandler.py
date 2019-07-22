@@ -13,8 +13,6 @@ import matplotlib.pyplot as plt
 # ############################################################################
 class AudioHandler:
 
-    ULAWTABLEINFLATEVALUE = 200000
-    ULAWQUANTSTEPS = 32768
     SIXTEENBITMAX = 32768
     UINTMAX=255
 
@@ -30,7 +28,7 @@ class AudioHandler:
     # construct
     # ############################################################################
     def __init__(self):
-        self.createULawEncodeTable()
+        pass
 
     # ############################################################################
     # Reads all sound files in dir and returns the data in a dictionary
@@ -134,47 +132,7 @@ class AudioHandler:
         sound["frequencySpectrum"] = scaleFFT
         sound["spectrumLen"] = len(scaleFFT)
 
-    # ############################################################################
-    # Takes a linear sample between 0 and 1, centered around 0.5, and codes it into a sort of u-law
-    # format. With higher resolution around 0.5.. Good for hi-fi sound
-    # ############################################################################
-    def uLawDecode(self, x):
 
-        # Credit: https://arachnoid.com/polysolve/
-        retVal = -5.2447552447829615e-003 + 2.6111111111115086e+000 * x + -4.8018648018657961e+000 * x * x +  3.2012432012438445e+000 * x * x * x
-        return retVal
-
-    # ############################################################################
-    # reverses uLawEncode turning sample value back to linear
-    # ############################################################################
-    def uLawEncode(self, x):
-
-        # Reverses the u-law coding above
-        x = math.floor(x * AudioHandler.ULAWTABLEINFLATEVALUE)
-        if x < 0: x = 0
-        if x > self.uLawDecodeTableMaxIndex: x = self.uLawDecodeTableMaxIndex
-        return self.uLawDecodeTable[x] / AudioHandler.ULAWQUANTSTEPS
-
-
-    # ############################################################################
-    # ...
-    # ############################################################################
-    def createULawEncodeTable(self):
-        self.uLawDecodeTable = {}
-        self.uLawDecodeTableLen = 0
-        lastStoredIndex = 0
-
-        for r in range (AudioHandler.ULAWQUANTSTEPS):
-            nextValue = math.floor(self.uLawDecode(r/AudioHandler.ULAWQUANTSTEPS) * AudioHandler.ULAWTABLEINFLATEVALUE)
-            if(nextValue <0): nextValue = 0
-
-            while lastStoredIndex < nextValue:
-                self.uLawDecodeTable[lastStoredIndex] = r
-                lastStoredIndex += 1
-
-            self.uLawDecodeTable[nextValue] = r
-            self.uLawDecodeTableMaxIndex = nextValue
-            lastStoredIndex = nextValue
 
     # ############################################################################
     # ...
@@ -183,63 +141,6 @@ class AudioHandler:
 
         newData = (data.astype(np.int16) - math.floor(AudioHandler.UINTMAX / 2))
         return newData * math.floor(AudioHandler.SIXTEENBITMAX / (AudioHandler.UINTMAX / 2))
-
-    # ############################################################################
-    # input: ScaledData sample ( 0 < x < 1 )
-    # output quant array, typically to be set as training data to network.
-    # ############################################################################
-    def sampleToQuantArray(self, sample, networkTrainingMax=0.90):
-
-        MIN_VALUE = 0.1
-
-        sample = self.uLawEncode(sample)
-
-        #ToDo: u-law
-        newArray = np.zeros(defs.quantSteps, dtype='float32')
-        newArray[:] = MIN_VALUE
-
-        posInArray = math.floor((defs.quantSteps * sample) / AudioHandler.K)
-        if posInArray >= newArray.shape[0]:
-            posInArray = newArray.shape[0] - 1
-
-        newArray[posInArray] = networkTrainingMax
-
-        index = posInArray + 1
-        smootingValue = networkTrainingMax * 0.7
-
-        while index < newArray.shape[0]:
-            newArray[index] = smootingValue
-            smootingValue = smootingValue / 2
-            index += 1
-            if index - posInArray > 10:
-                break
-
-        index = posInArray - 1
-        smootingValue = networkTrainingMax * 0.7
-
-        while index >= 0:
-            newArray[index] = smootingValue
-            smootingValue = smootingValue / 2
-            index -= 1
-            if index - posInArray < -10:
-                break
-
-        return newArray
-
-    # ############################################################################
-    # input: quantArray according to above
-    # output: ScaledData sample ( 0 < x < 1 )
-    # ############################################################################
-    def quantArrayToSample(self, quantArray):
-        # ToDo: u-law
-        try:
-            index = np.where(quantArray == np.amax(quantArray))[0][0]
-            return self.uLawDecode((index * AudioHandler.K) / defs.quantSteps)
-
-        except Exception as ex:
-            print(f"Warning. Failed to get numpy max {ex}")
-            return 0
-
 
 
     # ############################################################################
@@ -326,85 +227,9 @@ class AudioHandler:
             "scaling": 1.0
         }
 
-    # ############################################################################
-    # ...
-    # ############################################################################
-    def appendAndOverlapSounds(self, soundA, soundtoAppend, overlap):
-
-        copyOfSoundToAppend = copy.deepcopy(soundtoAppend)
-
-        if soundA is None:
-            newData = copyOfSoundToAppend
-        else:
-            soundToAppendTrimmed = self.trimSoundTailForOverlap(copyOfSoundToAppend, overlap, trimEnd=False)
-            newData = self.addOverlappingSounds(soundA, soundToAppendTrimmed, overlap)
-
-        return self.trimSoundTailForOverlap(newData, overlap, trimEnd=True)
 
     # ############################################################################
-    # ...
-    # ############################################################################
-    def addOverlappingSounds(self, soundA, soundB, overlap):
-
-        newLen = soundA["sampleCount"] + soundB["sampleCount"]- overlap
-        newData = np.zeros(newLen).astype(np.int16)
-        offset = soundA["sampleCount"] - overlap
-
-        newData[0:len(soundA["data"])]=soundA["data"]
-        soundBRawData = soundB["data"]
-
-        for r in range(overlap * 2):
-            newData[r + offset] += soundBRawData[r]
-
-        return  {
-            "sampleRate": soundA["sampleRate"],
-            "data": newData,
-            "scaledData" : self.downScaleAudio(newData),
-            "frequencySpectrum": None,
-            "spectrumLen": 0,
-            "fileName": "reconstructedSound",
-            "userDefinedName": "addedOverlappedSound",
-            "sampleCount": newLen,
-            "trackLengthSec": newLen / soundA["sampleRate"],
-            "scaling": 1.0
-        }
-
-    # ############################################################################
-    # Function
-    # ############################################################################
-    def trimSoundTailForOverlap(self, sound, overlap, trimEnd):
-
-        soundLen = sound["sampleCount"]
-
-        data = sound["data"]
-        if trimEnd:
-            fader = 1.0
-            faderSteps = -1 / overlap
-            offset = soundLen - overlap
-        else:
-            fader = 0.0
-            faderSteps = 1 / overlap
-            offset = 0
-
-        for r in range(overlap):
-            data[r + offset] = fader * data[r + offset]
-            fader += faderSteps
-
-        return  {
-            "sampleRate": sound["sampleRate"],
-            "data": data.astype(np.int16),
-            "scaledData" : self.downScaleAudio(data),
-            "frequencySpectrum": None,
-            "spectrumLen": 0,
-            "fileName": "deconstructedSound",
-            "userDefinedName": sound["userDefinedName"],
-            "sampleCount": sound["sampleCount"],
-            "trackLengthSec": sound["trackLengthSec"],
-            "scaling": 1.0
-        }
-
-    # ############################################################################
-    # No fancy sound stuff. working on raw data. Using another algorithm...
+    # Working on raw data, mixing two sounds together by overlapping them.
     # A = Standard python array
     # B = typically numpy... or Standard python is fine..
     # ############################################################################
@@ -434,6 +259,24 @@ class AudioHandler:
             soundA.append(soundB[a + overlap])
 
         return soundA
+
+    # ############################################################################
+    # // SORRY! I should not need to do post processing, but in the stepping mode
+    # I do this for now to be able to remove some white noise...
+    # ############################################################################
+    def lowPassFilter(self, sound, filterSteps):
+
+        if filterSteps is 0:
+            return sound
+
+        sound['scaledData'] = np.convolve(sound['scaledData'], np.ones((filterSteps,)) / filterSteps, mode='same')
+
+        # Convolution (sliding window avg) does not fill these first and last bytes...
+        sound['scaledData'][0] = sound['scaledData'][1]
+        sound['scaledData'][-1] = sound['scaledData'][-2]
+
+        sound['data'] = self.upScaleAudio(sound['scaledData'])
+        return sound
 
 
     # ############################################################################
@@ -466,7 +309,6 @@ class AudioHandler:
         diff = fftArrayA[0:soundA['sampleCount']] - fftArrayB[0:soundB['sampleCount']]
 
         return np.sum(np.abs(diff.astype('int64'))) / soundA['sampleCount']
-
 
 
     # ############################################################################
@@ -527,31 +369,17 @@ class AudioHandler:
             "scaling": scaling * sound["scaling"]
         }
 
+
 # ############################################################################
 # For testing purposes..
 # ############################################################################
 if __name__ == '__main__':
     a = AudioHandler()
 
-    for y in range(100):
-        input = y / 100
-        encoded = a.uLawEncode(input)
-        decoded = a.uLawDecode(encoded)
-        print(f"input {input}, encoded {encoded}, decoded {decoded}")
-
-
-
-
-
-    exit(1)
-
-    val = AudioHandler().sampleToQuantArray(0.75)
-    restoredVal = AudioHandler().quantArrayToSample(val)
-    val = AudioHandler().sampleToQuantArray(0.0)
-    val = AudioHandler().sampleToQuantArray(1.01)
-
     soundData = AudioHandler().readAllFilesInDir(defs.WAV_FILE_PATH)
+    a.lowPassFilter(a.getAPieceOfSound(soundData[1], 0, 100), 3)
 
+    exit(0)
 
     # Temp:
     slice = AudioHandler().getAPieceOfSound(soundData[0], random.randint(0,soundData[0]["sampleCount"] - 1 - 1000), 1000)
