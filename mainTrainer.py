@@ -26,7 +26,7 @@ class MainTrainer:
                 per_process_gpu_memory_fraction = 0.85,
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 100,  # Batch size for training.
-                BATCH_INF_SIZE = 1000,  # When running inference for stats purpose, how large batch to the GPU
+                BATCH_INF_SIZE = 4,  # When running inference for stats purpose, how large batch to the GPU
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 10000,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
@@ -34,28 +34,29 @@ class MainTrainer:
                 stride1 = 1,
                 filterSize1 = 48,
                 numberFilters1 = 8,
-                stride2 = 4,
-                filterSize2 = 64,
-                numberFilters2 = 16,
-                stride3 = 2,
-                filterSize3 = 5,
-                numberFilters3 = 18,
+                stride2 = 2,
+                filterSize2 = 48,
+                numberFilters2 = 12,
+                stride3 = 4,
+                filterSize3 = 64,
+                numberFilters3 = 16,
                 stride4=2,
                 filterSize4=5,
                 numberFilters4=48,
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 2,
-                hiddenLayerDecayRate = 0.35, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                hidden_layers = 3,
+                hiddenLayerDecayRate = 0.55, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.000025,
                 learning_rate_decay = 250000 , # Higher gives slower decay
-                networkInputLen = 1224,
+                networkInputLen = 1024,
                 networkOutputLen = 60,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
-                inferenceOverlap = 10,
+                effectiveInferenceOutputLen = 60,
+                inferenceOverlap = 6,
                 lowPassFilterSteps = 2,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
@@ -101,6 +102,7 @@ class MainTrainer:
             'uniqueSessionNumber' : uniqueSessionNumber,
             'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
             'inferenceOverlap' : inferenceOverlap,
+            'effectiveInferenceOutputLen': effectiveInferenceOutputLen,
             'lowPassFilterSteps': lowPassFilterSteps,
             'hiddenLayerDecayRate' :hiddenLayerDecayRate
         }
@@ -117,6 +119,7 @@ class MainTrainer:
         self.globalLock = Lock()
         self.blockNextImgPrintOut = False
         self.slowMode = False
+        self.printCounter = 0
 
         try:
             os.mkdir(self.tensorboardFullPath)
@@ -167,55 +170,26 @@ class MainTrainer:
             print(f"OutputSize after 1st CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
             layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
             print(f"OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride3'], self.params['numberFilters2'], self.params['filterSize3'], self.params['numberFilters3'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 3rd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride4'], self.params['numberFilters3'], self.params['filterSize4'], self.params['numberFilters4'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 4th CNN: {math.floor((filterCount) * self.params['networkInputLen'] / aggregatedStride)}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride5'], self.params['numberFilters4'], self.params['filterSize5'], self.params['numberFilters5'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 5th CNN: {math.floor((filterCount) * self.params['networkInputLen'] / aggregatedStride)}")
-
 
             #Flatten before pushing into fully connected
-            layerCNN = tf.reshape(layerCNN, [-1, math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)])
-
-            # matmul the CNN output with the input! skip-through!
-            #layerCNN = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), self.params['networkInputLen'],  self.params['USE_RELU'])
-
-            #layerFC = self.new_fc_layer(self.xFC, int(self.xFC.shape[1]), math.floor(int(self.xFC.shape[1]) * 1.0), self.params['USE_RELU'])
-            #layerFC = self.new_fc_layer(layerFC, int(layerFC.shape[1]), self.params['networkInputLen'], self.params['USE_RELU'])
-
-            #w1 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
-            #w2 = self.new_weights(shape=[self.params['networkInputLen'], self.params['networkInputLen']])
-            #layer = tf.nn.sigmoid(tf.matmul(layerCNN, w1) + tf.matmul(layerFC, w2))
-
-            layer = self.new_fc_layer(layerCNN, int(layerCNN.shape[1]), math.floor(int(layerCNN.shape[1]) * 1.0), self.params['USE_RELU'])
-            print(f"OutputSize after first FC layer: {int(layer.shape[1])}")
+            layer = tf.reshape(layerCNN, [-1, math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)])
 
             # Extra fully connected
             for a in range(self.params['hidden_layers']):
-                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * self.params['hiddenLayerDecayRate']), self.params['USE_RELU'])
+                decay = self.params['hiddenLayerDecayRate']
+                if a is 0:
+                    decay = 1.0
+                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * decay), self.params['USE_RELU'])
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
-            #layer = self.new_fc_layer(layer, int(layer.shape[1]), self.params['encoderBullsEyeSize'], self.params['USE_RELU'])
-            #print(f"OutputSize after bullsEye FC layer: {int(layer.shape[1])}")
-
-            #layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
-            #print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
-            #layer = self.new_fc_layer(layer, int(layer.shape[1]), 250, self.params['USE_RELU'])
-            #print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
-
+            # Final layer
             self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
             print(f"Created {self.params['hidden_layers']} Fully connected layers...")
 
-            # cost functions an optimizers..
+            # cost functions and optimizers..
             self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
             global_step = tf.Variable(0, trainable=False)
             learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
-
-            #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.y_modelFC, labels=self.y_true_FC))
-            #optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-            #self.optimizerFC = optimizer.minimize(cost)
-
             cost = tf.reduce_mean(tf.square(self.y_modelFC - self.y_true_FC))
             self.optimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
 
@@ -234,19 +208,19 @@ class MainTrainer:
                 self.sessionFC.run(tf.global_variables_initializer())
 
 
-
     #####################################################
     # Runs inference with sliding window over an entire sound.
     #####################################################
     def runInferenceOnSoundSampleBySample(self, soundData):
 
         inferenceCounter = 0
-        writeCounter = self.params['networkInputLen'] - self.params['networkOutputLen']
+        writeCounter = self.params['networkInputLen'] - self.params['effectiveInferenceOutputLen']
         outRawData = np.zeros(soundData["sampleCount"])
         outRawData[:] = self.audio.center
         done = False
 
         assert self.params['networkOutputLen'] > self.params['inferenceOverlap']
+        assert self.params['networkOutputLen'] >= self.params['effectiveInferenceOutputLen']
 
         totTimeStart = time.time()
         infTimeOnlyTot = 0
@@ -255,11 +229,11 @@ class MainTrainer:
             while not done:
                 inputBatch = []
 
-                for e in range(math.floor(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'] / self.params['networkOutputLen'])):
+                for e in range(math.floor(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'] / self.params['effectiveInferenceOutputLen'])):
                     nextDataSlize = self.audio.getAPieceOfSound(soundData, inferenceCounter, self.params['networkInputLen'])
                     reshapedDataSlize = nextDataSlize["scaledData"].reshape(self.params['networkInputLen'])
                     inputBatch.append(reshapedDataSlize)
-                    inferenceCounter += self.params['networkOutputLen'] - self.params['inferenceOverlap']
+                    inferenceCounter += self.params['effectiveInferenceOutputLen'] - self.params['inferenceOverlap']
                     if inferenceCounter >= (soundData["sampleCount"] - self.params['networkInputLen'] - 1):
                         done = True
                         break
@@ -273,12 +247,11 @@ class MainTrainer:
 
                     if self.params['inferenceOverlap'] is 0:
                         # No overlap... Just copy the data from inference
-                        for i in range(self.params['networkOutputLen']):
-                            outputConvertedBatch.append(nextQSample[i])
+                        for i in range(self.params['networkOutputLen'] - (self.params['networkOutputLen'] - self.params['effectiveInferenceOutputLen'])):
+                            outputConvertedBatch.append(nextQSample[i + self.params['networkOutputLen'] - self.params['effectiveInferenceOutputLen']])
                     else:
                         # Overlap!
                         outputConvertedBatch = self.audio.overlapRawData(outputConvertedBatch, nextQSample, self.params['inferenceOverlap'])
-
 
                 outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
                 writeCounter += len(outputConvertedBatch) - self.params['inferenceOverlap']
@@ -292,7 +265,10 @@ class MainTrainer:
         lowPassFiltered = self.audio.lowPassFilter(soundOutput, self.params['lowPassFilterSteps'])
         postProcessTime = time.time() - postProcessStart
         totTime = time.time() - totTimeStart
-        print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(totTime / soundData['trackLengthSec']):.3f} seconds/seconds")
+
+        if self.printCounter < 2:
+            self.printCounter += 1
+            print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(totTime / soundData['trackLengthSec']):.3f} seconds/second")
 
         return lowPassFiltered
 
@@ -532,7 +508,7 @@ class MainTrainer:
 
                 if superScoreAvg > maxSuperScore:
 
-                    print(f"step: {r} New Superscore: {superScoreAvg:.6f}, generatorPrecisionError: {generatorPrecisionError:.4f}")
+                    print(f"step: {r} New Superscore: {superScoreAvg:.6f}")
                     maxSuperScore = superScoreAvg
 
                     #
@@ -550,7 +526,6 @@ class MainTrainer:
                         infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
                         self.audio.writeSoundToDir(infOutSound, defs.WAV_FILE_OUTPUT, self.params["uniqueSessionNumber"] + "-" + str(r))
                         self.plotter.plotSoundSimple(pieceOfInputSound, pieceOfLabelSound, infOutSound, audio4=None, useSame=True, blocking=self.blockNextImgPrintOut)
-
             #
             # TRAIN
             #
