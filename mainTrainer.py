@@ -26,7 +26,7 @@ class MainTrainer:
                 per_process_gpu_memory_fraction = 0.85,
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 100,  # Batch size for training.
-                BATCH_INF_SIZE = 4,  # When running inference for stats purpose, how large batch to the GPU
+                BATCH_INF_SIZE = 100,  # How many samples for stats purpose
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 10000,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
@@ -36,7 +36,7 @@ class MainTrainer:
                 numberFilters1 = 8,
                 stride2 = 2,
                 filterSize2 = 48,
-                numberFilters2 = 12,
+                numberFilters2 = 8,
                 stride3 = 4,
                 filterSize3 = 64,
                 numberFilters3 = 16,
@@ -46,11 +46,11 @@ class MainTrainer:
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 3,
-                hiddenLayerDecayRate = 0.55, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                hidden_layers = 2,
+                hiddenLayerDecayRate = 1.0, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.000025,
                 learning_rate_decay = 250000 , # Higher gives slower decay
-                networkInputLen = 1024,
+                networkInputLen = 768,
                 networkOutputLen = 60,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
