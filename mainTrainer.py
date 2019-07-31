@@ -32,11 +32,11 @@ class MainTrainer:
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 stride1 = 1,
-                filterSize1 = 48,
-                numberFilters1 = 8,
+                filterSize1 = 96,
+                numberFilters1 = 10,
                 stride2 = 2,
-                filterSize2 = 48,
-                numberFilters2 = 8,
+                filterSize2 = 96,
+                numberFilters2 = 16,
                 stride3 = 4,
                 filterSize3 = 64,
                 numberFilters3 = 16,
@@ -46,18 +46,18 @@ class MainTrainer:
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 2,
-                hiddenLayerDecayRate = 1.0, #Each hidden layer will be this size compared to previous, 0.45 = 45%
-                learning_rate = 0.000025,
-                learning_rate_decay = 250000 , # Higher gives slower decay
-                networkInputLen = 768,
-                networkOutputLen = 60,
+                hidden_layers = 3,
+                hiddenLayerDecayRate = 0.25, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                learning_rate = 0.000035,
+                learning_rate_decay = 1000000 , # Higher gives slower decay
+                networkInputLen = 1024,
+                networkOutputLen = 128,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
-                effectiveInferenceOutputLen = 60,
-                inferenceOverlap = 6,
-                lowPassFilterSteps = 2,
+                effectiveInferenceOutputLen = 128,
+                inferenceOverlap = 10,
+                lowPassFilterSteps = 0,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -164,27 +164,38 @@ class MainTrainer:
 
             # Input!
             self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
-
+            layer = tf.reshape(self.xFC, [-1, int(self.xFC.shape[1]), 1])
             # CNN 1d 2 layers, 1 fully connected layer
-            layerCNN, filterCount, aggregatedStride = self.newConvLayer(self.xFC, self.params['stride1'], 1, self.params['filterSize1'], self.params['numberFilters1'], self.params['USE_RELU'])
-            print(f"OutputSize after 1st CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-            layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
-            print(f"OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
+            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(self.xFC, self.params['stride1'], 1, self.params['filterSize1'], self.params['numberFilters1'], self.params['USE_RELU'])
+
+            layer = tf.layers.conv1d(layer, self.params['numberFilters1'], self.params['filterSize1'], strides=self.params['stride1'], padding='same')
+            tf.summary.histogram("first CNN", layer)
+            layer = tf.layers.conv1d(layer, self.params['numberFilters2'], self.params['filterSize2'], strides=self.params['stride2'], padding='same')
+
+
+            CNNOutSize = int(layer.shape[1] * layer.shape[2])
+            print(f"OutputSize after last CNN: {CNNOutSize}")
+            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
+            #print(f"OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
 
             #Flatten before pushing into fully connected
-            layer = tf.reshape(layerCNN, [-1, math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)])
+            layer = tf.reshape(layer, [-1, CNNOutSize])
 
             # Extra fully connected
             for a in range(self.params['hidden_layers']):
                 decay = self.params['hiddenLayerDecayRate']
                 if a is 0:
                     decay = 1.0
+                    #tf.summary.histogram("First FC", layer)
                 layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * decay), self.params['USE_RELU'])
+
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
-            # Final layer
-            self.y_modelFC = self.new_fc_layer(layer,  int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
-            print(f"Created {self.params['hidden_layers']} Fully connected layers...")
+            dividend = math.floor(int(layer.shape[1]) / self.params['networkOutputLen'])
+
+            layer = tf.reshape(layer, [-1, math.floor(int(layer.shape[1]) / dividend), 1, dividend])
+            layer = tf.layers.conv2d_transpose(layer, 1, kernel_size=4, strides=(1, 1), padding='same')  # input, filters, kernelSize, strides.
+            self.y_modelFC = tf.keras.activations.relu(tf.reshape(layer, [-1, self.params['networkOutputLen']]), alpha=0.1)
 
             # cost functions and optimizers..
             self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
@@ -197,7 +208,7 @@ class MainTrainer:
             tf.summary.scalar("1_loss", cost)
             tf.summary.scalar("3_learning_rate", learning_rate)
             self.merged_summary_op = tf.summary.merge_all()
-            self.summary_writer = tf.summary.FileWriter(self.tensorboardFullPath)
+            self.summary_writer = tf.summary.FileWriter(self.tensorboardFullPath, self.sessionFC.graph)
 
 
             try:
