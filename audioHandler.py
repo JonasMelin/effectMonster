@@ -20,8 +20,8 @@ class AudioHandler:
     # the value 1.0 is theoretical max of sigmoid!
     # Example: K = 0.95, center = 0.5 --> amplitude from 0.05 -> 0.95 centered around 0.5 (typicall sigmoid activation)
     # Example: K = 1000, center = 600 --> amplitude from 100 -> 1100 centered around 600 (typical RELU activation)
-    K = 100000.0
-    center = K / 2
+    K = 2.0
+    center = 0
 
 
     # ############################################################################

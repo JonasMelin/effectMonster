@@ -26,20 +26,20 @@ class MainTrainer:
                 per_process_gpu_memory_fraction = 0.85,
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 100,  # Batch size for training.
-                BATCH_INF_SIZE = 100,  # How many samples for stats purpose
-                BATCH_SIZE_INFERENCE_FULL_SOUND = 10000,  # Batch size When running inference to generate full audio file
+                BATCH_INF_SIZE = 200,  # How many samples for stats purpose
+                BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 stride1 = 1,
                 filterSize1 = 96,
-                numberFilters1 = 10,
+                numberFilters1 = 12,
                 stride2 = 2,
                 filterSize2 = 96,
-                numberFilters2 = 16,
+                numberFilters2 = 18,
                 stride3 = 4,
                 filterSize3 = 64,
-                numberFilters3 = 16,
+                numberFilters3 = 18,
                 stride4=2,
                 filterSize4=5,
                 numberFilters4=48,
@@ -47,9 +47,9 @@ class MainTrainer:
                 filterSize5=5,
                 numberFilters5=12,
                 hidden_layers = 3,
-                hiddenLayerDecayRate = 0.25, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                hiddenLayerDecayRate = 0.50, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.000035,
-                learning_rate_decay = 1000000 , # Higher gives slower decay
+                learning_rate_decay = 200000 , # Higher gives slower decay
                 networkInputLen = 1024,
                 networkOutputLen = 128,
                 encoderBullsEyeSize = 55,
@@ -136,6 +136,9 @@ class MainTrainer:
 
         threading.Thread(target=self.keyboardReader).start()
 
+    #####################################################
+    # keyboard input...
+    #####################################################
     def keyboardReader(self):
         print("Press b to block next picture print out...")
         while True:
@@ -165,20 +168,11 @@ class MainTrainer:
             # Input!
             self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
             layer = tf.reshape(self.xFC, [-1, int(self.xFC.shape[1]), 1])
-            # CNN 1d 2 layers, 1 fully connected layer
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(self.xFC, self.params['stride1'], 1, self.params['filterSize1'], self.params['numberFilters1'], self.params['USE_RELU'])
-
-            layer = tf.layers.conv1d(layer, self.params['numberFilters1'], self.params['filterSize1'], strides=self.params['stride1'], padding='same')
-            tf.summary.histogram("first CNN", layer)
-            layer = tf.layers.conv1d(layer, self.params['numberFilters2'], self.params['filterSize2'], strides=self.params['stride2'], padding='same')
-
+            layer = tf.layers.conv1d(layer, self.params['numberFilters1'], self.params['filterSize1'], strides=self.params['stride1'], padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, self.params['numberFilters2'], self.params['filterSize2'], strides=self.params['stride2'], padding='same', activation=tf.nn.leaky_relu)
 
             CNNOutSize = int(layer.shape[1] * layer.shape[2])
             print(f"OutputSize after last CNN: {CNNOutSize}")
-            #layerCNN, filterCount, aggregatedStride = self.newConvLayer(layerCNN, self.params['stride2'], self.params['numberFilters1'], self.params['filterSize2'], self.params['numberFilters2'], self.params['USE_RELU'], aggregatedStride)
-            #print(f"OutputSize after 2nd CNN: {math.floor((filterCount) * self.params['networkInputLen']  / aggregatedStride)}")
-
-            #Flatten before pushing into fully connected
             layer = tf.reshape(layer, [-1, CNNOutSize])
 
             # Extra fully connected
@@ -186,16 +180,27 @@ class MainTrainer:
                 decay = self.params['hiddenLayerDecayRate']
                 if a is 0:
                     decay = 1.0
-                    #tf.summary.histogram("First FC", layer)
-                layer = self.new_fc_layer(layer, int(layer.shape[1]), math.floor(int(layer.shape[1]) * decay), self.params['USE_RELU'])
+                layer = tf.contrib.layers.fully_connected(layer, math.floor(int(layer.shape[1]) * decay), activation_fn=tf.nn.leaky_relu)
 
                 print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
 
-            dividend = math.floor(int(layer.shape[1]) / self.params['networkOutputLen'])
+            #layer = self.new_fc_layer(layer, int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
+            #print(f"OutputSize after last FC layer: {int(layer.shape[1])}")
+            #layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
+            #layer = tf.keras.activations.relu(tf.layers.conv1d(layer, 4, 128, 4, padding='same'), alpha=0.01)
+            #layer = tf.keras.activations.relu(tf.layers.conv1d(layer, 8, 64, 4, padding='same'), alpha=0.01)
+            #layer = tf.keras.activations.relu(tf.layers.conv1d(layer, 1, 32, 4, padding='same'), alpha=0.01)
 
-            layer = tf.reshape(layer, [-1, math.floor(int(layer.shape[1]) / dividend), 1, dividend])
-            layer = tf.layers.conv2d_transpose(layer, 1, kernel_size=4, strides=(1, 1), padding='same')  # input, filters, kernelSize, strides.
-            self.y_modelFC = tf.keras.activations.relu(tf.reshape(layer, [-1, self.params['networkOutputLen']]), alpha=0.1)
+            #layer = tf.reshape(layer, [-1, self.params['networkOutputLen']])
+
+
+            #dividend = math.floor(int(layer.shape[1]) / self.params['networkOutputLen'])
+
+            #layer = tf.reshape(layer, [-1, int(int(layer.shape[1]) / 72), 4, 80])
+            #layer = tf.layers.conv2d_transpose(layer, 4, kernel_size=5, strides=(1, 1), padding='same', activation=tf.keras.activations.tanh)  # input, filters, kernelSize, strides.
+            #self.y_modelFC = tf.reshape(layer, [-1, self.params['networkOutputLen']])
+
+            self.y_modelFC = tf.contrib.layers.fully_connected(layer, self.params['networkOutputLen'], activation_fn=tf.keras.activations.tanh)
 
             # cost functions and optimizers..
             self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
@@ -273,7 +278,7 @@ class MainTrainer:
 
         postProcessStart = time.time()
         soundOutput = self.audio.createSoundFromInferenceOutput(outRawData, sampleRate=soundData["sampleRate"])
-        lowPassFiltered = self.audio.lowPassFilter(soundOutput, self.params['lowPassFilterSteps'])
+        #lowPassFiltered = self.audio.lowPassFilter(soundOutput, self.params['lowPassFilterSteps'])
         postProcessTime = time.time() - postProcessStart
         totTime = time.time() - totTimeStart
 
@@ -281,7 +286,7 @@ class MainTrainer:
             self.printCounter += 1
             print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(totTime / soundData['trackLengthSec']):.3f} seconds/second")
 
-        return lowPassFiltered
+        return soundOutput
 
 
     #####################################################
@@ -500,8 +505,6 @@ class MainTrainer:
                 superScoreAvg = np.average(superScoreList)
 
                 summary = tf.Summary()
-                #if sameOutput and r >= 1000:
-                #    summary.value.add(tag='0_generatorPrecisionError', simple_value=generatorPrecisionError)
 
                 if r > 1000:
                     summary.value.add(tag='7_infFinalOutVariance', simple_value=infFinalOutVariance)
@@ -570,63 +573,6 @@ class MainTrainer:
             trainTimePerSample_us = 1000000* (trainTime / self.params['BATCH_SIZE'])
 
         self.sessionFC.close()
-
-
-    #####################################################
-    # Function
-    #####################################################
-    def newConvLayer(self, input, stride, num_input_channels, filter_size, num_filters, use_relu=True, aggregatedStride=1, dilations=None):
-
-        weights = self.new_weights([filter_size, num_input_channels, num_filters])
-        biases = self.new_biases(length=num_filters)
-        layer = tf.reshape(input, [-1, int(input.shape[1]), num_input_channels]) # batch, inputSize, channels
-        layer = tf.nn.conv1d(layer, weights, stride, 'SAME') #Value, filter, stride, padding
-        layer += biases
-
-        if use_relu:
-            layer = tf.nn.leaky_relu(layer)
-        else:
-            layer = tf.nn.sigmoid(layer)
-
-        return layer, num_filters, aggregatedStride * stride
-
-
-    #####################################################
-    # Function
-    #####################################################
-    def new_fc_layer(self,
-                     input,          # The previous layer.
-                     num_inputs,     # Num. inputs from prev. layer.
-                     num_outputs,    # Num. outputs.
-                     use_relu=True): # Use Rectified Linear Unit (ReLU)?
-
-        # Create new weights and biases.
-        weights = self.new_weights(shape=[num_inputs, num_outputs])
-        biases = self.new_biases(length=num_outputs)
-
-        # Calculate the layer as the matrix multiplication of
-        # the input and weights, and then add the bias-values.
-        layer = tf.matmul(input, weights) + biases
-
-        # Use ReLU?
-        if use_relu:
-            layer = tf.nn.leaky_relu(layer)
-        else:
-            layer = tf.nn.sigmoid(layer)
-
-        return layer
-
-    #####################################################
-    # Function
-    #####################################################
-    def new_weights(self, shape):
-        return tf.Variable(tf.truncated_normal(shape, stddev=0.05), dtype=tf.float32)
-
-    #####################################################
-    # Function
-    #####################################################
-    def new_biases(self, length):
-        return tf.Variable(tf.constant(0.05, shape=[length]), dtype=tf.float32)
 
     # ############################################################################
     # save variables to disk
