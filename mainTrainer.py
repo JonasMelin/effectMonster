@@ -27,29 +27,30 @@ class MainTrainer:
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 100,  # Batch size for training.
                 BATCH_INF_SIZE = 200,  # How many samples for stats purpose
-                BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size When running inference to generate full audio file
+                BATCH_SIZE_INFERENCE_FULL_SOUND = 4096,  # Batch size When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
-                validationPercent = 0.06,  # e.g. 0.1 means 10% of the length of total sound will be validation
+                validationPercent = 0.4,  # e.g. 0.1 means 10% of the length of total sound will be validation
+                maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 stride1 = 1,
-                filterSize1 = 96,
-                numberFilters1 = 12,
-                stride2 = 2,
-                filterSize2 = 96,
-                numberFilters2 = 18,
-                stride3 = 4,
-                filterSize3 = 64,
-                numberFilters3 = 18,
-                stride4=2,
-                filterSize4=5,
-                numberFilters4=48,
+                filterSize1 = 128,
+                numberFilters1 = 16,
+                stride2 = 1,
+                filterSize2 = 128,
+                numberFilters2 = 12,
+                stride3 = 1,
+                filterSize3 = 128,
+                numberFilters3 = 8,
+                stride4=1,
+                filterSize4=128,
+                numberFilters4=6,
                 stride5=1,
                 filterSize5=5,
                 numberFilters5=12,
-                hidden_layers = 3,
-                hiddenLayerDecayRate = 0.50, #Each hidden layer will be this size compared to previous, 0.45 = 45%
-                learning_rate = 0.000035,
-                learning_rate_decay = 200000 , # Higher gives slower decay
+                hidden_layers = 2,
+                hiddenLayerDecayRate = 0.52, #Each hidden layer will be this size compared to previous, 0.45 = 45%
+                learning_rate = 0.00005,
+                learning_rate_decay = 400000 , # Higher gives slower decay
                 networkInputLen = 1024,
                 networkOutputLen = 128,
                 encoderBullsEyeSize = 55,
@@ -77,6 +78,7 @@ class MainTrainer:
             'BATCH_SIZE_INFERENCE_FULL_SOUND' : BATCH_SIZE_INFERENCE_FULL_SOUND,  # Batch size When running inference to generate full audio file
             'STATS_EVERY' : STATS_EVERY,  # How often (skipping steps) to run inference to gather stats.
             'validationPercent' : validationPercent,  # e.g. 0.1 means 10% of the length of maxTrainSamples will be validation
+            'maxValidationSampleCount' : maxValidationSampleCount,
             'MIN_STEPS_BETWEEN_SAVES' : MIN_STEPS_BETWEEN_SAVES,
             'stride1': stride1,
             'filterSize1' : filterSize1,
@@ -167,40 +169,30 @@ class MainTrainer:
 
             # Input!
             self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
-            layer = tf.reshape(self.xFC, [-1, int(self.xFC.shape[1]), 1])
-            layer = tf.layers.conv1d(layer, self.params['numberFilters1'], self.params['filterSize1'], strides=self.params['stride1'], padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, self.params['numberFilters2'], self.params['filterSize2'], strides=self.params['stride2'], padding='same', activation=tf.nn.leaky_relu)
+
+            # CNN feature extraction layers
+            layer = tf.reshape(self.xFC, [-1, int(int(self.xFC.shape[1])/1), 1])
+            layer = tf.layers.conv1d(layer, 16, 128, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 12, 128, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 8, 128, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 6, 128, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 4, 128, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 2, 128, 1, padding='same', activation=tf.nn.leaky_relu)
 
             CNNOutSize = int(layer.shape[1] * layer.shape[2])
             print(f"OutputSize after last CNN: {CNNOutSize}")
             layer = tf.reshape(layer, [-1, CNNOutSize])
 
-            # Extra fully connected
-            for a in range(self.params['hidden_layers']):
-                decay = self.params['hiddenLayerDecayRate']
-                if a is 0:
-                    decay = 1.0
-                layer = tf.contrib.layers.fully_connected(layer, math.floor(int(layer.shape[1]) * decay), activation_fn=tf.nn.leaky_relu)
+            # Fully connected layers
+            layer = tf.contrib.layers.fully_connected(layer, int(layer.shape[1]), activation_fn=tf.nn.leaky_relu)
+            layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
 
-                print(f"OutputSize after next FC layer: {int(layer.shape[1])}")
-
-            #layer = self.new_fc_layer(layer, int(layer.shape[1]), self.params['networkOutputLen'], self.params['USE_RELU'])
-            #print(f"OutputSize after last FC layer: {int(layer.shape[1])}")
-            #layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
-            #layer = tf.keras.activations.relu(tf.layers.conv1d(layer, 4, 128, 4, padding='same'), alpha=0.01)
-            #layer = tf.keras.activations.relu(tf.layers.conv1d(layer, 8, 64, 4, padding='same'), alpha=0.01)
-            #layer = tf.keras.activations.relu(tf.layers.conv1d(layer, 1, 32, 4, padding='same'), alpha=0.01)
-
-            #layer = tf.reshape(layer, [-1, self.params['networkOutputLen']])
-
-
-            #dividend = math.floor(int(layer.shape[1]) / self.params['networkOutputLen'])
-
-            #layer = tf.reshape(layer, [-1, int(int(layer.shape[1]) / 72), 4, 80])
-            #layer = tf.layers.conv2d_transpose(layer, 4, kernel_size=5, strides=(1, 1), padding='same', activation=tf.keras.activations.tanh)  # input, filters, kernelSize, strides.
-            #self.y_modelFC = tf.reshape(layer, [-1, self.params['networkOutputLen']])
-
-            self.y_modelFC = tf.contrib.layers.fully_connected(layer, self.params['networkOutputLen'], activation_fn=tf.keras.activations.tanh)
+            # CNN generative layers
+            layer = tf.reshape(layer, [-1, int(int(layer.shape[1])/8), 8])
+            layer = tf.layers.conv1d(layer, 4, 32, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 2, 16, 1, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 1, 16, 1, padding='same', activation=tf.keras.activations.tanh)
+            self.y_modelFC = tf.reshape(layer, [-1, self.params['networkOutputLen']])
 
             # cost functions and optimizers..
             self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
@@ -420,8 +412,8 @@ class MainTrainer:
 
         inputSound = self.audio.getAPieceOfSound(inputSoundRaw, 0, validationStartPoint - 1)
         labelSound = self.audio.getAPieceOfSound(labelSoundRaw, 0, validationStartPoint - 1)
-        inputSoundVal = self.audio.getAPieceOfSound(inputSoundRaw, validationStartPoint, validationSampleCount)
-        labelSoundVal = self.audio.getAPieceOfSound(labelSoundRaw, validationStartPoint, validationSampleCount)
+        inputSoundVal = self.audio.getAPieceOfSound(inputSoundRaw, validationStartPoint, self.params['maxValidationSampleCount'])#validationSampleCount'])
+        labelSoundVal = self.audio.getAPieceOfSound(labelSoundRaw, validationStartPoint, self.params['maxValidationSampleCount'])#validationSampleCount'])
 
         threading.Thread(target=self.threadFuncPrepareData, args=(inputSound,labelSound, self.trainingData, "training", True)).start()
         threading.Thread(target=self.threadFuncPrepareData, args=(inputSoundVal, labelSoundVal, self.validationData, "validation", False)).start()

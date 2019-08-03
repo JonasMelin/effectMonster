@@ -194,7 +194,7 @@ class AudioHandler:
             length = soundData['data'].shape[0]
 
         if length > soundData["scaledData"].shape[0] - offset:
-                raise ValueError("defining to long slice of sound when picking a slice")
+                length = soundData["scaledData"].shape[0] - offset
 
         return {
             "sampleRate": soundData["sampleRate"],
