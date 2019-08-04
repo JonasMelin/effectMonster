@@ -65,8 +65,7 @@ def restoreGraphFromDisk(sessionFC, graphFC, fullGraphPath):
 #####################################################
 def runInferenceOnSoundSampleBySample(soundData, audio, networkInputLen,
                                       networkOutputLen, inferenceOverlap, effectiveInferenceOutputLen,
-                                      BATCH_SIZE_INFERENCE_FULL_SOUND, sessionFC, graphFC, xFC, y_modelFC,
-                                      verbose=False):
+                                      BATCH_SIZE_INFERENCE_FULL_SOUND, sessionFC, graphFC, xFC, y_modelFC):
 
     inferenceCounter = 0
     writeCounter = networkInputLen - effectiveInferenceOutputLen
