@@ -2,7 +2,7 @@
 
 class Definitions:
 
-    WAV_FILE_PATH = 'soundStorage'
+    WAV_FILE_PATH = 'soundInput'
     WAV_FILE_OUTPUT = 'output'
     METADATA_OUTPUT = 'metadata'
     GRAPH_PATH = 'graph'

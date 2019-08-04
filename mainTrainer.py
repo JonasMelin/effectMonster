@@ -8,7 +8,9 @@ import math
 import numpy as np
 import time
 import threading
+import network
 from threading import Lock
+
 
 # test commit to understand github contributors. 
 
@@ -109,11 +111,15 @@ class MainTrainer:
             'hiddenLayerDecayRate' :hiddenLayerDecayRate
         }
 
-        print(self.params)
-
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
         self.fullGraphPath = os.path.join(defs.GRAPH_PATH, self.params['graphName'])
-        self.defineFCModel()
+        self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
+            self.params['networkInputLen'], self.params['networkOutputLen'],
+            per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)
+        self.y_true_FC, self.optimizerFC, self.merged_summary_op, self.summary_writer = self.trainingSetup(
+            self.y_modelFC, self.graphFC, self.sessionFC, self.fullGraphPath,
+            self.tensorboardFullPath, self.params['networkOutputLen'],
+            self.params['learning_rate'], self.params['learning_rate_decay'])
         self.audio = audioHandler.AudioHandler()
         self.plotter = audioPlotter.AudioPlotter()
         self.trainingData = []
@@ -159,124 +165,37 @@ class MainTrainer:
 
 
     #####################################################
-    # Define the neural network.
+    # Set up optimizers, tensorboard, restore graphs...
     #####################################################
-    def defineFCModel(self):
+    def trainingSetup(self, y_modelFC, graphFC, sessionFC, fullGraphPath, tensorboardFullPath, networkOutputLen, learning_rate, learning_rate_decay):
 
-        self.graphFC = tf.Graph()
-        self.sessionFC = tf.Session(graph=self.graphFC, config=tf.ConfigProto(gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)))
-
-        with self.graphFC.as_default() as g:
-
-            # Input!
-            self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
-
-            # CNN feature extraction layers
-            layer = tf.reshape(self.xFC, [-1, int(self.xFC.shape[1]), 1])
-            layer = tf.layers.conv1d(layer, 28, 128, 2, padding='same', activation=tf.nn.leaky_relu)
-            #tf.summary.histogram("CNN2", layer)
-            layer = tf.layers.conv1d(layer, 28, 64, 2, padding='same', activation=tf.nn.leaky_relu)
-            #tf.summary.histogram("CNN3", layer)
-            layer = tf.layers.conv1d(layer, 28, 32, 2, padding='same', activation=tf.nn.leaky_relu)
-            #tf.summary.histogram("CNN4", layer)
-            layer = tf.layers.conv1d(layer, 28, 16, 2, padding='same', activation=tf.nn.leaky_relu)
-            #tf.summary.histogram("CNN5", layer)
-            layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
-
-            # Fully connected layers
-
-            layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 1.0), activation_fn=tf.nn.leaky_relu)
-            #tf.summary.histogram("FC2", layer)
-            self.y_modelFC = tf.contrib.layers.fully_connected(layer, self.params['networkOutputLen'], activation_fn=tf.keras.activations.tanh)
-            #tf.summary.histogram("Final", self.y_modelFC)
+        with graphFC.as_default() as g:
 
             # cost functions and optimizers..
-            self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
+            retValy_true_FC = tf.placeholder(tf.float32, shape=[None, networkOutputLen], name='y_trueFC')
             global_step = tf.Variable(0, trainable=False)
-            learning_rate = tf.train.exponential_decay(self.params['learning_rate'], global_step, self.params['learning_rate_decay'], 0.99, staircase=True)
-            cost = tf.reduce_mean(tf.square(self.y_modelFC - self.y_true_FC))
-            self.optimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
+            learning_rate = tf.train.exponential_decay(learning_rate, global_step, learning_rate_decay, 0.99,
+                                                       staircase=True)
+            cost = tf.reduce_mean(tf.square(y_modelFC - retValy_true_FC))
+            retValoptimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
 
             # Tensorboard
             tf.summary.scalar("1_loss", cost)
             tf.summary.scalar("3_learning_rate", learning_rate)
-            self.merged_summary_op = tf.summary.merge_all()
-            self.summary_writer = tf.summary.FileWriter(self.tensorboardFullPath, self.sessionFC.graph)
-
-
-
+            retValmerged_summary_op = tf.summary.merge_all()
+            retValsummary_writer = tf.summary.FileWriter(tensorboardFullPath, sessionFC.graph)
 
             try:
-                tf.train.Saver().restore(self.sessionFC, self.fullGraphPath)
-                print(f"Successfully restored variables from disk! {self.fullGraphPath}")
+                tf.train.Saver().restore(sessionFC, fullGraphPath)
+                print(f"Successfully restored variables from disk! {fullGraphPath}")
             except:
-                print(f"Failed to restore variables from disk! {self.fullGraphPath}")
-                self.sessionFC.run(tf.global_variables_initializer())
+                print(f"Failed to restore variables from disk! {fullGraphPath}")
+                sessionFC.run(tf.global_variables_initializer())
+
+            return retValy_true_FC, retValoptimizerFC, retValmerged_summary_op, retValsummary_writer
 
 
-    #####################################################
-    # Runs inference with sliding window over an entire sound.
-    #####################################################
-    def runInferenceOnSoundSampleBySample(self, soundData):
 
-        inferenceCounter = 0
-        writeCounter = self.params['networkInputLen'] - self.params['effectiveInferenceOutputLen']
-        outRawData = np.zeros(soundData["sampleCount"])
-        outRawData[:] = self.audio.center
-        done = False
-
-        assert self.params['networkOutputLen'] > self.params['inferenceOverlap']
-        assert self.params['networkOutputLen'] >= self.params['effectiveInferenceOutputLen']
-
-        totTimeStart = time.time()
-        infTimeOnlyTot = 0
-
-        try:
-            while not done:
-                inputBatch = []
-
-                for e in range(math.floor(self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'] / self.params['effectiveInferenceOutputLen'])):
-                    nextDataSlize = self.audio.getAPieceOfSound(soundData, inferenceCounter, self.params['networkInputLen'])
-                    reshapedDataSlize = nextDataSlize["scaledData"].reshape(self.params['networkInputLen'])
-                    inputBatch.append(reshapedDataSlize)
-                    inferenceCounter += self.params['effectiveInferenceOutputLen'] - self.params['inferenceOverlap']
-                    if inferenceCounter >= (soundData["sampleCount"] - self.params['networkInputLen'] - 1):
-                        done = True
-                        break
-
-                st = time.time()
-                arrayOfQuantizedsamples = self.getFCOutput(inputBatch)
-                infTimeOnlyTot += time.time() - st
-
-                outputConvertedBatch = []
-                for nextQSample in arrayOfQuantizedsamples:
-
-                    if self.params['inferenceOverlap'] is 0:
-                        # No overlap... Just copy the data from inference
-                        for i in range(self.params['networkOutputLen'] - (self.params['networkOutputLen'] - self.params['effectiveInferenceOutputLen'])):
-                            outputConvertedBatch.append(nextQSample[i + self.params['networkOutputLen'] - self.params['effectiveInferenceOutputLen']])
-                    else:
-                        # Overlap!
-                        outputConvertedBatch = self.audio.overlapRawData(outputConvertedBatch, nextQSample, self.params['inferenceOverlap'])
-
-                outRawData[writeCounter:writeCounter + len(outputConvertedBatch)] = outputConvertedBatch
-                writeCounter += len(outputConvertedBatch) - self.params['inferenceOverlap']
-
-
-        except Exception as ex:
-            pass
-
-        postProcessStart = time.time()
-        soundOutput = self.audio.createSoundFromInferenceOutput(outRawData, sampleRate=soundData["sampleRate"])
-        #lowPassFiltered = self.audio.lowPassFilter(soundOutput, self.params['lowPassFilterSteps'])
-        postProcessTime = time.time() - postProcessStart
-        totTime = time.time() - totTimeStart
-
-        if self.printCounter < 2:
-            self.printCounter += 1
-            print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(infTimeOnlyTot / soundData['trackLengthSec']):.3f} inference seconds/second")
-
-        return soundOutput
 
 
     #####################################################
@@ -456,7 +375,7 @@ class MainTrainer:
                         inputBatch[p] = self.validationData[randomIndex]["input"]
                         labelBatch[p] = self.validationData[randomIndex]["label"]
 
-                    outputArray = self.getFCOutput(inputBatch)
+                    outputArray = network.getFCOutput(inputBatch, self.sessionFC, self.graphFC, self.xFC, self.y_modelFC)
 
                     ccc = 0
 
@@ -477,7 +396,11 @@ class MainTrainer:
                 # Run a shorter inference piece in order to get a error of the FFT over the label vs inference
                 pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, defs.FFT_DiffLength)
                 pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, defs.FFT_DiffLength)
-                infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
+                infOutSound, infTime = network.runInferenceOnSoundSampleBySample(pieceOfInputSound, self.audio, self.params['networkInputLen'],
+                                                                        self.params['networkOutputLen'], self.params['inferenceOverlap'],
+                                                                        self.params['effectiveInferenceOutputLen'],
+                                                                        self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'],
+                                                                        self.sessionFC, self.graphFC, self.xFC, self.y_modelFC)
                 fftDiffScore = self.audio.soundDiffFFT(infOutSound, pieceOfLabelSound)
 
                 infTime = time.time() - startTime
@@ -527,14 +450,16 @@ class MainTrainer:
 
                         pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, inputSoundVal["sampleCount"])
                         pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, labelSoundVal["sampleCount"])
-                        infOutSound = self.runInferenceOnSoundSampleBySample(pieceOfInputSound)
+                        infOutSound, infTime = network.runInferenceOnSoundSampleBySample(pieceOfInputSound, self.audio, self.params['networkInputLen'],
+                                                                        self.params['networkOutputLen'], self.params['inferenceOverlap'],
+                                                                        self.params['effectiveInferenceOutputLen'],
+                                                                        self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'],
+                                                                        self.sessionFC, self.graphFC, self.xFC, self.y_modelFC)
                         self.audio.writeSoundToDir(infOutSound, defs.WAV_FILE_OUTPUT, self.params["uniqueSessionNumber"] + "-" + str(r))
                         self.plotter.plotSoundSimple(pieceOfInputSound, pieceOfLabelSound, infOutSound, audio4=None, useSame=True, blocking=self.blockNextImgPrintOut)
             #
             # TRAIN
             #
-
-
             with self.globalLock:
                 inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkInputLen']))
                 labelBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkOutputLen']))
@@ -594,16 +519,7 @@ class MainTrainer:
             if iteration%100 == 0:
                 self.summary_writer.add_summary(summary, iteration)
 
-    #####################################################
-    # Calculates the output from the FC network
-    #####################################################
-    def getFCOutput(self, dataX):
-        assert self.sessionFC is not None and self.graphFC is not None
 
-        feed_dict = {self.xFC: dataX}
-
-        with self.graphFC.as_default() as g:
-            return self.sessionFC.run(self.y_modelFC, feed_dict=feed_dict)
 
 
 # ############################################################################
