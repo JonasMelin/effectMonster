@@ -57,7 +57,7 @@ class MainTrainer:
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
                 effectiveInferenceOutputLen = 128,
-                inferenceOverlap = 10,
+                inferenceOverlap = 8,
                 lowPassFilterSteps = 0,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
@@ -173,23 +173,19 @@ class MainTrainer:
 
             # CNN feature extraction layers
             layer = tf.reshape(self.xFC, [-1, int(self.xFC.shape[1]), 1])
-            layer = tf.layers.conv1d(layer, 24, 128, 2, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 28, 128, 2, padding='same', activation=tf.nn.leaky_relu)
             #tf.summary.histogram("CNN2", layer)
-            layer = tf.layers.conv1d(layer, 24, 64, 2, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 28, 64, 2, padding='same', activation=tf.nn.leaky_relu)
             #tf.summary.histogram("CNN3", layer)
-            layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 28, 32, 2, padding='same', activation=tf.nn.leaky_relu)
             #tf.summary.histogram("CNN4", layer)
-            layer = tf.layers.conv1d(layer, 24, 16, 2, padding='same', activation=tf.nn.leaky_relu)
+            layer = tf.layers.conv1d(layer, 28, 16, 2, padding='same', activation=tf.nn.leaky_relu)
             #tf.summary.histogram("CNN5", layer)
-            #layer = tf.layers.conv1d(layer, 24, 8, 2, padding='same', activation=tf.nn.leaky_relu)
-            # tf.summary.histogram("CNN6", layer)
             layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
 
             # Fully connected layers
-            #layer = tf.contrib.layers.fully_connected(layer, int(layer.shape[1]), activation_fn=tf.nn.leaky_relu)
-            #tf.summary.histogram("FC1", layer)
+
             layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 1.0), activation_fn=tf.nn.leaky_relu)
-            #layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
             #tf.summary.histogram("FC2", layer)
             self.y_modelFC = tf.contrib.layers.fully_connected(layer, self.params['networkOutputLen'], activation_fn=tf.keras.activations.tanh)
             #tf.summary.histogram("Final", self.y_modelFC)
@@ -278,7 +274,7 @@ class MainTrainer:
 
         if self.printCounter < 2:
             self.printCounter += 1
-            print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(totTime / soundData['trackLengthSec']):.3f} seconds/second")
+            print(f"INFERENCE time for entire sound ink postProcess: {totTime:.2f}s. infOnly: {infTimeOnlyTot:.2f}s, TotalInferenceTimePostProcessing: {postProcessTime:.4f}s, Sound lenght is {soundData['trackLengthSec']:.2f}s -> {(infTimeOnlyTot / soundData['trackLengthSec']):.3f} inference seconds/second")
 
         return soundOutput
 
