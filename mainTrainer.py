@@ -23,11 +23,11 @@ class MainTrainer:
     def __init__(
                 self,
                 disable_gpu = False,
-                per_process_gpu_memory_fraction = 0.85,
+                per_process_gpu_memory_fraction = 0.20,
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 100,  # Batch size for training.
                 BATCH_INF_SIZE = 200,  # How many samples for stats purpose
-                BATCH_SIZE_INFERENCE_FULL_SOUND = 4096,  # Batch size When running inference to generate full audio file
+                BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size (#samples!!) When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.4,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1500000,
@@ -123,6 +123,7 @@ class MainTrainer:
         self.slowMode = False
         self.printCounter = 0
 
+
         try:
             os.mkdir(self.tensorboardFullPath)
         except Exception as ex:
@@ -171,28 +172,27 @@ class MainTrainer:
             self.xFC = tf.placeholder(tf.float32, shape=[None, self.params['networkInputLen']], name='xConv')
 
             # CNN feature extraction layers
-            layer = tf.reshape(self.xFC, [-1, int(int(self.xFC.shape[1])/1), 1])
-            layer = tf.layers.conv1d(layer, 16, 128, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 12, 128, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 8, 128, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 6, 128, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 4, 128, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 2, 128, 1, padding='same', activation=tf.nn.leaky_relu)
-
-            CNNOutSize = int(layer.shape[1] * layer.shape[2])
-            print(f"OutputSize after last CNN: {CNNOutSize}")
-            layer = tf.reshape(layer, [-1, CNNOutSize])
+            layer = tf.reshape(self.xFC, [-1, int(self.xFC.shape[1]), 1])
+            layer = tf.layers.conv1d(layer, 24, 128, 2, padding='same', activation=tf.nn.leaky_relu)
+            #tf.summary.histogram("CNN2", layer)
+            layer = tf.layers.conv1d(layer, 24, 64, 2, padding='same', activation=tf.nn.leaky_relu)
+            #tf.summary.histogram("CNN3", layer)
+            layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=tf.nn.leaky_relu)
+            #tf.summary.histogram("CNN4", layer)
+            layer = tf.layers.conv1d(layer, 24, 16, 2, padding='same', activation=tf.nn.leaky_relu)
+            #tf.summary.histogram("CNN5", layer)
+            #layer = tf.layers.conv1d(layer, 24, 8, 2, padding='same', activation=tf.nn.leaky_relu)
+            # tf.summary.histogram("CNN6", layer)
+            layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
 
             # Fully connected layers
-            layer = tf.contrib.layers.fully_connected(layer, int(layer.shape[1]), activation_fn=tf.nn.leaky_relu)
-            layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
-
-            # CNN generative layers
-            layer = tf.reshape(layer, [-1, int(int(layer.shape[1])/8), 8])
-            layer = tf.layers.conv1d(layer, 4, 32, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 2, 16, 1, padding='same', activation=tf.nn.leaky_relu)
-            layer = tf.layers.conv1d(layer, 1, 16, 1, padding='same', activation=tf.keras.activations.tanh)
-            self.y_modelFC = tf.reshape(layer, [-1, self.params['networkOutputLen']])
+            #layer = tf.contrib.layers.fully_connected(layer, int(layer.shape[1]), activation_fn=tf.nn.leaky_relu)
+            #tf.summary.histogram("FC1", layer)
+            layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 1.0), activation_fn=tf.nn.leaky_relu)
+            #layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
+            #tf.summary.histogram("FC2", layer)
+            self.y_modelFC = tf.contrib.layers.fully_connected(layer, self.params['networkOutputLen'], activation_fn=tf.keras.activations.tanh)
+            #tf.summary.histogram("Final", self.y_modelFC)
 
             # cost functions and optimizers..
             self.y_true_FC = tf.placeholder(tf.float32, shape=[None, self.params['networkOutputLen']], name='y_trueFC')
@@ -206,6 +206,8 @@ class MainTrainer:
             tf.summary.scalar("3_learning_rate", learning_rate)
             self.merged_summary_op = tf.summary.merge_all()
             self.summary_writer = tf.summary.FileWriter(self.tensorboardFullPath, self.sessionFC.graph)
+
+
 
 
             try:
