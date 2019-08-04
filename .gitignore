@@ -1,10 +1,9 @@
 __pycache__*
-*.wav
+
 graph
 .idea
 output
 tensorboard
 GRAPH_BACKUP
 soundBank
-soundStorage
 metadata
