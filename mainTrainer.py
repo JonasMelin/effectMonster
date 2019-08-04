@@ -34,23 +34,6 @@ class MainTrainer:
                 validationPercent = 0.4,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
-                stride1 = 1,
-                filterSize1 = 128,
-                numberFilters1 = 16,
-                stride2 = 1,
-                filterSize2 = 128,
-                numberFilters2 = 12,
-                stride3 = 1,
-                filterSize3 = 128,
-                numberFilters3 = 8,
-                stride4=1,
-                filterSize4=128,
-                numberFilters4=6,
-                stride5=1,
-                filterSize5=5,
-                numberFilters5=12,
-                hidden_layers = 2,
-                hiddenLayerDecayRate = 0.52, #Each hidden layer will be this size compared to previous, 0.45 = 45%
                 learning_rate = 0.00005,
                 learning_rate_decay = 400000 , # Higher gives slower decay
                 networkInputLen = 1024,
@@ -82,22 +65,6 @@ class MainTrainer:
             'validationPercent' : validationPercent,  # e.g. 0.1 means 10% of the length of maxTrainSamples will be validation
             'maxValidationSampleCount' : maxValidationSampleCount,
             'MIN_STEPS_BETWEEN_SAVES' : MIN_STEPS_BETWEEN_SAVES,
-            'stride1': stride1,
-            'filterSize1' : filterSize1,
-            'numberFilters1' : numberFilters1,
-            'stride2' : stride2,
-            'filterSize2' : filterSize2,
-            'numberFilters2' : numberFilters2,
-            'stride3' : stride3,
-            'filterSize3' : filterSize3,
-            'numberFilters3' : numberFilters3,
-            'stride4': stride4,
-            'filterSize4': filterSize4,
-            'numberFilters4': numberFilters4,
-            'stride5': stride5,
-            'filterSize5': filterSize5,
-            'numberFilters5': numberFilters5,
-            'hidden_layers' : hidden_layers,
             'learning_rate' : learning_rate,
             'encoderBullsEyeSize' : encoderBullsEyeSize,
             'networkInputLen' : networkInputLen,
@@ -107,8 +74,7 @@ class MainTrainer:
             'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
             'inferenceOverlap' : inferenceOverlap,
             'effectiveInferenceOutputLen': effectiveInferenceOutputLen,
-            'lowPassFilterSteps': lowPassFilterSteps,
-            'hiddenLayerDecayRate' :hiddenLayerDecayRate
+            'lowPassFilterSteps': lowPassFilterSteps
         }
 
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
@@ -185,17 +151,9 @@ class MainTrainer:
             retValmerged_summary_op = tf.summary.merge_all()
             retValsummary_writer = tf.summary.FileWriter(tensorboardFullPath, sessionFC.graph)
 
-            try:
-                tf.train.Saver().restore(sessionFC, fullGraphPath)
-                print(f"Successfully restored variables from disk! {fullGraphPath}")
-            except:
-                print(f"Failed to restore variables from disk! {fullGraphPath}")
-                sessionFC.run(tf.global_variables_initializer())
+            network.restoreGraphFromDisk(sessionFC, fullGraphPath)
 
             return retValy_true_FC, retValoptimizerFC, retValmerged_summary_op, retValsummary_writer
-
-
-
 
 
     #####################################################
@@ -291,7 +249,7 @@ class MainTrainer:
     #####################################################
     # Train a network
     #####################################################
-    def trainToReproduceSoundOneValueAtTheTime(self, slicesPerLoop = 250):
+    def trainMain(self, slicesPerLoop = 250):
 
         trainTimePerSample_us = 0
         maxSuperScore = -999999.9
@@ -527,4 +485,4 @@ class MainTrainer:
 # ############################################################################
 if __name__ == '__main__':
 
-    MainTrainer().trainToReproduceSoundOneValueAtTheTime()
+    MainTrainer().trainMain()

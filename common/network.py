@@ -48,11 +48,25 @@ def getFCOutput(dataX, sessionFC, graphFC, xFC, y_modelFC):
         return sessionFC.run(y_modelFC, feed_dict=feed_dict)
 
 #####################################################
+# Restores the graph from disk. If not exist,
+# initializes all global variables.
+#####################################################
+def restoreGraphFromDisk(sessionFC, graphFC, fullGraphPath):
+    with graphFC.as_default() as g:
+        try:
+            tf.train.Saver().restore(sessionFC, fullGraphPath)
+            print(f"Successfully restored variables from disk! {fullGraphPath}")
+        except:
+            print(f"Failed to restore variables from disk! {fullGraphPath}")
+            sessionFC.run(tf.global_variables_initializer())
+
+#####################################################
 # Runs inference with sliding window over an entire sound.
 #####################################################
 def runInferenceOnSoundSampleBySample(soundData, audio, networkInputLen,
                                       networkOutputLen, inferenceOverlap, effectiveInferenceOutputLen,
-                                      BATCH_SIZE_INFERENCE_FULL_SOUND, sessionFC, graphFC, xFC, y_modelFC):
+                                      BATCH_SIZE_INFERENCE_FULL_SOUND, sessionFC, graphFC, xFC, y_modelFC,
+                                      verbose=False):
 
     inferenceCounter = 0
     writeCounter = networkInputLen - effectiveInferenceOutputLen
@@ -63,7 +77,6 @@ def runInferenceOnSoundSampleBySample(soundData, audio, networkInputLen,
     assert networkOutputLen > inferenceOverlap
     assert networkOutputLen >= effectiveInferenceOutputLen
 
-    totTimeStart = time.time()
     infTimeOnlyTot = 0
 
     try:

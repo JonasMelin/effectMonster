@@ -9,7 +9,8 @@ from scipy.fftpack import fft
 import matplotlib.pyplot as plt
 
 # ############################################################################
-# CLASS to handle reading of wav files from disk
+# CLASS to handle all kind of audio manipulation, reding, writing to disk,
+# differentiating sounds in regards to frequency spectrum etc etc...
 # ############################################################################
 class AudioHandler:
 
@@ -87,51 +88,6 @@ class AudioHandler:
         except Exception as ex:
             print(f"Failed to read some wav files... {ex}")
             return allData
-
-    # ############################################################################
-    # ...
-    # ############################################################################
-    def addFFTToSound(self, sound):
-
-        if(sound["frequencySpectrum"] is not None):
-            # Already a freq spectrum in this sound...
-            return
-
-        fftArray = fft(sound["data"])
-
-        numUniquePoints = math.ceil((sound["sampleCount"] + 1) / 2.0)
-        fftArray = fftArray[0:numUniquePoints]
-
-        # FFT contains both magnitude and phase and given in complex numbers in real + imaginary parts (a + ib) format.
-        # By taking absolute value , we get only real part
-
-        fftArray = abs(fftArray)
-
-        # Scale the fft array by length of sample points so that magnitude does not depend on
-        # the length of the signal or on its sampling frequency
-
-        fftArray = fftArray / float(sound["sampleCount"])
-
-        # FFT has both positive and negative information. Square to get positive only
-        fftArray = fftArray ** 2
-
-        # Multiply by two (research why?)
-        # Odd NFFT excludes Nyquist point
-        if sound["sampleCount"] % 2 > 0:  # we've got odd number of points in fft
-            fftArray[1:len(fftArray)] = fftArray[1:len(fftArray)] * 2
-
-        else:  # We've got even number of points in fft
-            fftArray[1:len(fftArray) - 1] = fftArray[1:len(fftArray) - 1] * 2
-
-
-        sound["freqArray"] = np.arange(0, numUniquePoints, 1.0) * (sound["sampleRate"] / sound["sampleCount"]);
-
-        fftArray += 1  # move everything up by one, hence no value less than 0.
-        logFFT = (10 * np.log10(fftArray)) #Logarithmic
-        scaleFFT = logFFT / 100  # Down scale between 0 and 1
-        sound["frequencySpectrum"] = scaleFFT
-        sound["spectrumLen"] = len(scaleFFT)
-
 
 
     # ############################################################################
@@ -383,5 +339,4 @@ if __name__ == '__main__':
 
     # Temp:
     slice = AudioHandler().getAPieceOfSound(soundData[0], random.randint(0,soundData[0]["sampleCount"] - 1 - 1000), 1000)
-    AudioHandler().addFFTToSound(slice)
 
