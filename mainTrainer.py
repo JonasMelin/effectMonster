@@ -1,6 +1,7 @@
-import audioPlotter
-import audioHandler
-from definitions import Definitions as defs
+import common.audioPlotter as audioPlotter
+import common.audioHandler as audioHandler
+from common.definitions import Definitions as defs
+import common.network as network
 import json
 import os
 import random
@@ -8,7 +9,6 @@ import math
 import numpy as np
 import time
 import threading
-import network
 from threading import Lock
 
 
@@ -151,7 +151,7 @@ class MainTrainer:
             retValmerged_summary_op = tf.summary.merge_all()
             retValsummary_writer = tf.summary.FileWriter(tensorboardFullPath, sessionFC.graph)
 
-            network.restoreGraphFromDisk(sessionFC, fullGraphPath)
+            network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath)
 
             return retValy_true_FC, retValoptimizerFC, retValmerged_summary_op, retValsummary_writer
 

@@ -1,9 +1,10 @@
-from definitions import Definitions as defs
+from common.definitions import Definitions as defs
 import random
 from scipy.io import wavfile
 import os
 import numpy as np
 import math
+from scipy.fftpack import fft
 
 # ############################################################################
 # CLASS to handle all kind of audio manipulation, reding, writing to disk,

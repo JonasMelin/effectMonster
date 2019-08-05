@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import audioHandler
+import common.audioHandler as audioHandler
 
 class AudioPlotter:
 
