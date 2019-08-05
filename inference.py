@@ -1,35 +1,40 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="-1"  # Disable GPU..
+#os.environ["CUDA_VISIBLE_DEVICES"]="-1"  # Disable GPU..
 
 import audioHandler
 import network
 from definitions import Definitions as defs
 
-
-
 networkInputLen = 1024
 networkOutputLen = 128
-inferenceOverlap = 8
+batchSize = networkOutputLen
+inferenceOverlap = 100
 fullGraphPath = os.path.join(defs.GRAPH_PATH, 'latest')
+calulationUnit="CPU"
+
+if "CUDA_VISIBLE_DEVICES" not in os.environ:
+    # Running the GPU. This means run @full performance
+    batchSize = 20000
+    calulationUnit="GPU"
 
 class inference:
     def __init__(self):
         self.audio = audioHandler.AudioHandler()
 
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
-            networkInputLen, networkOutputLen)
+            networkInputLen, networkOutputLen, per_process_gpu_memory_fraction=0.20)
         network.restoreGraphFromDisk(self.sessionFC, self.graphFC, fullGraphPath)
 
 
     def run(self):
         soundDataList = self.audio.readAllFilesInDir(defs.WAV_FILE_PATH)
 
-        if soundDataList[0]["fileName"] == soundDataList[1]["fileName"]:
+        if len(soundDataList) > 1 and (soundDataList[0]["fileName"] == soundDataList[1]["fileName"]):
             # In this case, one stereo file was provided, use one channel as input, the other as label
             inputSoundRaw = soundDataList[1]
         else:
             # Here, two mono files are provided and (hopefully) named label and input. Use the files as such
-            for z in range(2):
+            for z in range(len(soundDataList)):
                 if "input" in soundDataList[z]["fileName"]:
                     inputSoundRaw = soundDataList[z]
 
@@ -37,14 +42,14 @@ class inference:
             print("Provide either one mono file named input, or one stereo track with input data (L/R shall be identical!)")
             exit(90)
 
-        print(f"Running inference for file {inputSoundRaw['fileName']}... Please wait...")
+        print(f"Using {calulationUnit} to run inference for file {inputSoundRaw['fileName']}... Please wait...")
         infOutSound, infTime = network.runInferenceOnSoundSampleBySample(inputSoundRaw, self.audio,
                                                                          networkInputLen, networkOutputLen,
                                                                          inferenceOverlap, networkOutputLen,
-                                                                         networkOutputLen, self.sessionFC, self.graphFC, self.xFC,
+                                                                         batchSize, self.sessionFC, self.graphFC, self.xFC,
                                                                          self.y_modelFC)
 
-        print(f"Complete! Writing sound to {defs.WAV_FILE_OUTPUT}. Inference using CPU only took {infTime:.2f} seconds/seconds")
+        print(f"Complete! Writing sound to {defs.WAV_FILE_OUTPUT}. Inference using {calulationUnit} took {infTime:.4f} seconds/seconds")
         self.audio.writeSoundToDir(infOutSound, defs.WAV_FILE_OUTPUT, "EffectOut_" + inputSoundRaw["fileName"])
 
 if __name__ == "__main__":

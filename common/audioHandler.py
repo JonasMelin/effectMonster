@@ -3,10 +3,7 @@ import random
 from scipy.io import wavfile
 import os
 import numpy as np
-import copy
 import math
-from scipy.fftpack import fft
-import matplotlib.pyplot as plt
 
 # ############################################################################
 # CLASS to handle all kind of audio manipulation, reding, writing to disk,
@@ -113,6 +110,9 @@ class AudioHandler:
             nextFullPathFileName = os.path.join(dir, 'outfile_'+str(random.randint(1000000000, 2000000000))+'.wav')
         else:
             nextFullPathFileName = os.path.join(dir, name+'.wav')
+
+        if os.path.isfile(nextFullPathFileName):
+            os.remove(nextFullPathFileName)
 
         scaledSoundL = self.scaleAudio(sound, 1/sound["scaling"])
 
