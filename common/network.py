@@ -30,7 +30,7 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
 
         # Fully connected layers
 
-        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 1.0), activation_fn=tf.nn.leaky_relu)
+        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
         #tf.summary.histogram("FC2", layer)
         retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
         #tf.summary.histogram("Final", self.y_modelFC)
