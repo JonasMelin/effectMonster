@@ -18,22 +18,17 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
 
         # CNN feature extraction layers
         layer = tf.reshape(retValxFC, [-1, int(retValxFC.shape[1]), 1])
-        layer = tf.layers.conv1d(layer, 28, 128, 2, padding='same', activation=tf.nn.leaky_relu)
-        #tf.summary.histogram("CNN2", layer)
-        layer = tf.layers.conv1d(layer, 28, 64, 2, padding='same', activation=tf.nn.leaky_relu)
-        #tf.summary.histogram("CNN3", layer)
-        layer = tf.layers.conv1d(layer, 28, 32, 2, padding='same', activation=tf.nn.leaky_relu)
-        #tf.summary.histogram("CNN4", layer)
-        layer = tf.layers.conv1d(layer, 28, 16, 2, padding='same', activation=tf.nn.leaky_relu)
-        #tf.summary.histogram("CNN5", layer)
+        layer = tf.layers.conv1d(layer, 24, 24, 2, padding='same', activation=tf.nn.leaky_relu)
+        layer = tf.layers.conv1d(layer, 18, 12, 2, padding='same', activation=tf.nn.leaky_relu)
+        layer = tf.layers.conv1d(layer, 12, 8, 2, padding='same', activation=tf.nn.leaky_relu)
+        layer = tf.layers.conv1d(layer, 9, 8, 2, padding='same', activation=tf.nn.leaky_relu)
+
         layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
 
         # Fully connected layers
 
-        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
-        #tf.summary.histogram("FC2", layer)
+        #layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
         retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
-        #tf.summary.histogram("Final", self.y_modelFC)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
 

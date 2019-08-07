@@ -34,7 +34,7 @@ class MainTrainer:
                 validationPercent = 0.4,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
-                learning_rate = 0.00005,
+                learning_rate = 0.0005,
                 learning_rate_decay = 400000 , # Higher gives slower decay
                 networkInputLen = 1024,
                 networkOutputLen = 128,
@@ -77,6 +77,7 @@ class MainTrainer:
             'lowPassFilterSteps': lowPassFilterSteps
         }
 
+        self.totalVariablesCount = 0
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
         self.fullGraphPath = os.path.join(defs.GRAPH_PATH, self.params['graphName'])
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
@@ -94,6 +95,7 @@ class MainTrainer:
         self.blockNextImgPrintOut = False
         self.slowMode = False
         self.printCounter = 0
+
 
 
         try:
@@ -146,14 +148,37 @@ class MainTrainer:
             retValoptimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
 
             # Tensorboard
+            tensor_summaries_list = []
+            for tvar in tf.trainable_variables():
+                tensor_summaries_list.append(tf.summary.histogram(tvar.name, tvar))
+            tf.summary.merge(tensor_summaries_list)
             tf.summary.scalar("1_loss", cost)
             tf.summary.scalar("3_learning_rate", learning_rate)
             retValmerged_summary_op = tf.summary.merge_all()
             retValsummary_writer = tf.summary.FileWriter(tensorboardFullPath, sessionFC.graph)
 
             network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath)
-
+            self.totalVariablesCount = self.countTotalWeights()
             return retValy_true_FC, retValoptimizerFC, retValmerged_summary_op, retValsummary_writer
+
+
+    #####################################################
+    # Count the number of variables in the network
+    #####################################################
+    def countTotalWeights(self):
+        t_vars = tf.trainable_variables()
+        totResult = 0
+
+        for next in t_vars:
+            result = 1
+            for y in range(int(len(next.shape))):
+                result *= int(next.shape[y])
+
+            print(f"Size {next.name}: {result}")
+            totResult += result
+
+        print(f"Total variables in network: {totResult}")
+        return totResult
 
 
     #####################################################
@@ -221,7 +246,7 @@ class MainTrainer:
     def calcSuperScore(self, labelVar, infVar, error, fftDiffScore, step):
 
         if step < 5:
-            return 0.0
+            return 0.0, 0.0
 
         if infVar < 0.00000001:
             infVar  = 0.00000001
@@ -243,7 +268,7 @@ class MainTrainer:
         except Exception as ex:
             pass
 
-        return retVal
+        return retVal, (retVal * 2000000/self.totalVariablesCount)
 
 
     #####################################################
@@ -255,6 +280,7 @@ class MainTrainer:
         maxSuperScore = -999999.9
         soundWriteCounter = -10000000
         superScoreList = np.zeros(shape=10)
+        superScoreListV3 = np.zeros(shape=10)
         superScoreCount = 0
         inputSoundRaw = None
         labelSoundRaw = None
@@ -371,9 +397,12 @@ class MainTrainer:
                 finalOutVarianceQuota = infFinalOutVariance / labelFinalOutVariance
                 generatorPrecisionError /= self.params['BATCH_INF_SIZE']
 
-                superScoreList[superScoreCount % len(superScoreList)] = self.calcSuperScore(labelFinalOutVariance, infFinalOutVariance, error, fftDiffScore, r)
+                superV1, superV3 = self.calcSuperScore(labelFinalOutVariance, infFinalOutVariance, error, fftDiffScore, r)
+                superScoreList[superScoreCount % len(superScoreList)] = superV1
+                superScoreListV3[superScoreCount % len(superScoreListV3)] = superV3
                 superScoreCount += 1
                 superScoreAvg = np.average(superScoreList)
+                superScoreAvgV3 = np.average(superScoreListV3)
 
                 summary = tf.Summary()
 
@@ -383,7 +412,8 @@ class MainTrainer:
                     summary.value.add(tag='1_FFT_DiffScore', simple_value=fftDiffScore)
                     summary.value.add(tag='1_error', simple_value=error)
 
-                summary.value.add(tag='0_superScoreV2', simple_value=superScoreAvg)
+                summary.value.add(tag='0_superScoreV2-soundQuality', simple_value=superScoreAvg)
+                summary.value.add(tag='0_superScoreV3-networkEfficiency', simple_value=superScoreAvgV3)
                 summary.value.add(tag='8_labelFinalOutVariance', simple_value=labelFinalOutVariance)
                 summary.value.add(tag='9_trainTimePerSample_us', simple_value=trainTimePerSample_us)
                 summary.value.add(tag='9_inferenceTime_ms', simple_value=inferenceTime_ms)
