@@ -1,5 +1,5 @@
 import os
-#os.environ["CUDA_VISIBLE_DEVICES"]="-1"  # Disable GPU..
+os.environ["CUDA_VISIBLE_DEVICES"]="-1"  # Disable GPU..
 
 import audioHandler
 import network
@@ -7,8 +7,8 @@ from definitions import Definitions as defs
 
 networkInputLen = 1024
 networkOutputLen = 128
-batchSize = networkOutputLen
-inferenceOverlap = 100
+batchSize = 128
+inferenceOverlap = 80
 fullGraphPath = os.path.join(defs.GRAPH_PATH, 'latest')
 calulationUnit="CPU"
 

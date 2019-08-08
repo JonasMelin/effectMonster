@@ -22,7 +22,6 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
         layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=tf.nn.leaky_relu)
         layer = tf.layers.conv1d(layer, 18, 24, 2, padding='same', activation=tf.nn.leaky_relu)
         layer = tf.layers.conv1d(layer, 12, 18, 2, padding='same', activation=tf.nn.leaky_relu)
-        layer = tf.layers.conv1d(layer, 9, 14, 1, padding='same', activation=tf.nn.leaky_relu)
 
         layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
 

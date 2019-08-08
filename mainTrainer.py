@@ -76,7 +76,7 @@ class MainTrainer:
             'effectiveInferenceOutputLen': effectiveInferenceOutputLen,
             'lowPassFilterSteps': lowPassFilterSteps
         }
-
+        print(f"Unique session number: {self.params['uniqueSessionNumber']}")
         self.totalVariablesCount = 0
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
         self.fullGraphPath = os.path.join(defs.GRAPH_PATH, self.params['graphName'])
