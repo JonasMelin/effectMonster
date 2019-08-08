@@ -27,15 +27,15 @@ class MainTrainer:
                 disable_gpu = False,
                 per_process_gpu_memory_fraction = 0.20,
                 USE_RELU = True,  # False => sigmoid
-                BATCH_SIZE = 100,  # Batch size for training.
+                BATCH_SIZE = 50,  # Batch size for training.
                 BATCH_INF_SIZE = 200,  # How many samples for stats purpose
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size (#samples!!) When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
-                validationPercent = 0.4,  # e.g. 0.1 means 10% of the length of total sound will be validation
+                validationPercent = 0.03,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
-                learning_rate = 0.0005,
-                learning_rate_decay = 400000 , # Higher gives slower decay
+                learning_rate = 0.0002,
+                learning_rate_decay = 1500000 , # Higher gives slower decay
                 networkInputLen = 1024,
                 networkOutputLen = 128,
                 encoderBullsEyeSize = 55,

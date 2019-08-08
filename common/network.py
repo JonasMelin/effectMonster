@@ -27,7 +27,7 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
 
         # Fully connected layers
 
-        #layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
+        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=tf.nn.leaky_relu)
         retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
