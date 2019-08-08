@@ -5,11 +5,10 @@ import audioHandler
 import network
 from definitions import Definitions as defs
 
-networkInputLen = 1024
-networkOutputLen = 128
+
 batchSize = 128
 inferenceOverlap = 80
-fullGraphPath = os.path.join(defs.GRAPH_PATH, 'latest')
+
 calulationUnit="CPU"
 
 if "CUDA_VISIBLE_DEVICES" not in os.environ:
@@ -22,8 +21,8 @@ class inference:
         self.audio = audioHandler.AudioHandler()
 
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
-            networkInputLen, networkOutputLen, per_process_gpu_memory_fraction=0.20)
-        network.restoreGraphFromDisk(self.sessionFC, self.graphFC, fullGraphPath)
+            defs.networkInputLen, defs.networkOutputLen, per_process_gpu_memory_fraction=0.20)
+        network.restoreGraphFromDisk(self.sessionFC, self.graphFC, defs.fullGraphPath)
 
 
     def run(self):
@@ -44,8 +43,8 @@ class inference:
 
         print(f"Using {calulationUnit} to run inference for file {inputSoundRaw['fileName']}... Please wait...")
         infOutSound, infTime = network.runInferenceOnSoundSampleBySample(inputSoundRaw, self.audio,
-                                                                         networkInputLen, networkOutputLen,
-                                                                         inferenceOverlap, networkOutputLen,
+                                                                         defs.networkInputLen, defs.networkOutputLen,
+                                                                         inferenceOverlap, defs.networkOutputLen,
                                                                          batchSize, self.sessionFC, self.graphFC, self.xFC,
                                                                          self.y_modelFC)
 

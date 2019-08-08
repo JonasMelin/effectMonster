@@ -36,8 +36,8 @@ class MainTrainer:
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 learning_rate = 0.0002,
                 learning_rate_decay = 1500000 , # Higher gives slower decay
-                networkInputLen = 1024,
-                networkOutputLen = 128,
+                networkInputLen = defs.networkInputLen,
+                networkOutputLen = defs.networkOutputLen,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
@@ -79,12 +79,11 @@ class MainTrainer:
         print(f"Unique session number: {self.params['uniqueSessionNumber']}")
         self.totalVariablesCount = 0
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
-        self.fullGraphPath = os.path.join(defs.GRAPH_PATH, self.params['graphName'])
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
             self.params['networkInputLen'], self.params['networkOutputLen'],
             per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)
         self.y_true_FC, self.optimizerFC, self.merged_summary_op, self.summary_writer = self.trainingSetup(
-            self.y_modelFC, self.graphFC, self.sessionFC, self.fullGraphPath,
+            self.y_modelFC, self.graphFC, self.sessionFC, defs.fullGraphPath,
             self.tensorboardFullPath, self.params['networkOutputLen'],
             self.params['learning_rate'], self.params['learning_rate_decay'])
         self.audio = audioHandler.AudioHandler()
@@ -95,6 +94,8 @@ class MainTrainer:
         self.blockNextImgPrintOut = False
         self.slowMode = False
         self.printCounter = 0
+
+        print(f"output_node_name for frozen graph: {self.y_modelFC.name.split(':')[0]}")
 
 
 
@@ -489,7 +490,8 @@ class MainTrainer:
 
         with self.graphFC.as_default() as g:
             saver = tf.train.Saver()
-            saver.save(self.sessionFC, self.fullGraphPath)
+            saver.save(self.sessionFC, defs.fullGraphPath)#, global_step=1000)
+            tf.train.write_graph(self.sessionFC.graph_def, defs.GRAPH_PATH, "graph.pb")
 
     #####################################################
     # learn by history
