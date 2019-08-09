@@ -490,7 +490,7 @@ class MainTrainer:
 
         with self.graphFC.as_default() as g:
             saver = tf.train.Saver()
-            saver.save(self.sessionFC, defs.fullGraphPath)#, global_step=1000)
+            saver.save(self.sessionFC, defs.fullGraphPath)
             tf.train.write_graph(self.sessionFC.graph_def, defs.GRAPH_PATH, "graph.pb")
 
     #####################################################
