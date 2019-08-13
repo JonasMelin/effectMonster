@@ -1,0 +1,4 @@
+ - Install Bazel
+ - get git sourcecode
+ - build your binary: bazel build --config=monolithic --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2   :RunGraph
+
