@@ -3,6 +3,17 @@ import time
 import numpy as np
 import math
 
+def defineCNNLayers(layer):
+
+    layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
+    layer = tf.layers.conv1d(layer, 24, 48, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 12, 32, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 6, 24, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 3, 18, 2, padding='same', activation=myActivation)
+    layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
+    return layer
+
+
 #####################################################
 # Define the neural network.
 #####################################################
@@ -16,19 +27,32 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
         # Input!
         retValxFC = tf.placeholder(tf.float32, shape=[None, networkInputLen], name='xConv')
 
-        # CNN feature extraction layers
-        layer = tf.reshape(retValxFC, [-1, int(retValxFC.shape[1]), 1])
-        layer = tf.layers.conv1d(layer, 32, 48, 1, padding='same', activation=myActivation)
-        layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=myActivation)
-        layer = tf.layers.conv1d(layer, 12, 24, 2, padding='same', activation=myActivation)
-        layer = tf.layers.conv1d(layer, 6, 18, 2, padding='same', activation=myActivation)
+        with tf.variable_scope('PHASE1') as scope:
+            layerCNN1 = defineCNNLayers(retValxFC)
+            layerFC1_TINY = tf.contrib.layers.fully_connected(layerCNN1, int(int(layerCNN1.shape[1]) * 0.1), activation_fn=myActivation)
+        with tf.variable_scope('PHASE2') as scope:
+            layerCNN2 = defineCNNLayers(retValxFC)
+            layerFC2_TINY = tf.contrib.layers.fully_connected(layerCNN2, int(int(layerCNN2.shape[1]) * 0.1), activation_fn=myActivation)
+        with tf.variable_scope('PHASE3') as scope:
+            layerCNN3 = defineCNNLayers(retValxFC)
+            layerFC3_TINY = tf.contrib.layers.fully_connected(layerCNN3, int(int(layerCNN3.shape[1]) * 0.1), activation_fn=myActivation)
+        with tf.variable_scope('PHASE4') as scope:
+            layerCNN4 = defineCNNLayers(retValxFC)
 
-        layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
+        with tf.variable_scope("CONCAT_PHASE1") as scope:
+            layerFC1 = tf.contrib.layers.fully_connected(layerCNN1, int(int(layerCNN1.shape[1]) * 1.0), activation_fn=myActivation)
+            layerConcat1 = tf.concat([layerFC1, layerCNN2, layerFC1_TINY], 1)
 
-        # Fully connected layers
+        with tf.variable_scope("CONCAT_PHASE1_PHASE2") as scope:
+            layerFC2 = tf.contrib.layers.fully_connected(layerConcat1, int(int(layerConcat1.shape[1]) * 1.0), activation_fn=myActivation)
+            layerConcat2 = tf.concat([layerFC2, layerCNN3, layerFC2_TINY], 1)
 
-        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=myActivation)
-        retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
+        with tf.variable_scope("CONCAT_PHASE1_PHASE2_PHASE3") as scope:
+            layerFC3 = tf.contrib.layers.fully_connected(layerConcat2, int(int(layerConcat2.shape[1]) * 1.0), activation_fn=myActivation)
+            layerConcat3 = tf.concat([layerFC3, layerCNN4, layerFC3_TINY], 1)
+
+        with tf.variable_scope("CONCAT_PHASE1_PHASE2_PHASE3_PHASE4") as scope:
+            retValy_modelFC = tf.contrib.layers.fully_connected(layerConcat3, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
 

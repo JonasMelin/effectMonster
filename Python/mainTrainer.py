@@ -82,8 +82,8 @@ class MainTrainer:
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
             self.params['networkInputLen'], self.params['networkOutputLen'],
             per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)
-        self.y_true_FC, self.optimizerFC, self.merged_summary_op, self.summary_writer = self.trainingSetup(
-            self.y_modelFC, self.graphFC, self.sessionFC, defs.fullGraphPath,
+        self.y_true_FC, self.optimizerFC1, self.optimizerFC2, self.optimizerFC3, self.optimizerFC4, self.optimizerFCALL, self.merged_summary_op, self.summary_writer = self.trainingSetup(
+            self.y_modelFC, self.graphFC,  self.sessionFC, defs.fullGraphPath,
             self.tensorboardFullPath, self.params['networkOutputLen'],
             self.params['learning_rate'], self.params['learning_rate_decay'])
         self.audio = audioHandler.AudioHandler()
@@ -148,12 +148,35 @@ class MainTrainer:
             cost = tf.reduce_mean(tf.square(y_modelFC - retValy_true_FC))
 
             # Probably meaningsless gradient clipping by norm. But it cant really hurt the sound quality..
-            opt_func = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-            tvars = tf.trainable_variables()
-            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), 1.0)
-            retValoptimizerFC = opt_func.apply_gradients(zip(grads, tvars))
+            #opt_func = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+            #tvars = tf.trainable_variables()
+            #grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), 1.0)
+            #retValoptimizerFC = opt_func.apply_gradients(zip(grads, tvars))
 
-            #retValoptimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
+            tvars = tf.trainable_variables()
+            PHASE1_vars = [var for var in tvars if ('PHASE1' in var.name)]
+            PHASE2_vars = [var for var in tvars if ('PHASE2' in var.name)]
+            PHASE3_vars = [var for var in tvars if ('PHASE3' in var.name)]
+            PHASE4_vars = [var for var in tvars if ('PHASE4' in var.name)]
+            PHASEALL_vars = tvars
+
+            retValoptimizerFC1 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
+                                                                                              global_step=global_step,
+                                                                                              var_list=PHASE1_vars)
+            retValoptimizerFC2 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
+                                                                                              global_step=global_step,
+                                                                                              var_list=PHASE2_vars)
+            retValoptimizerFC3 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
+                                                                                              global_step=global_step,
+                                                                                              var_list=PHASE3_vars)
+            retValoptimizerFC4 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
+                                                                                              global_step=global_step,
+                                                                                              var_list=PHASE4_vars)
+            retValoptimizerFCALL = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
+                                                                                              global_step=global_step,
+                                                                                              var_list=PHASEALL_vars)
+
+
 
             # Tensorboard
             tensor_summaries_list = []
@@ -167,7 +190,7 @@ class MainTrainer:
 
             network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath)
             self.totalVariablesCount = self.countTotalWeights()
-            return retValy_true_FC, retValoptimizerFC, retValmerged_summary_op, retValsummary_writer
+            return retValy_true_FC, retValoptimizerFC1, retValoptimizerFC2, retValoptimizerFC3, retValoptimizerFC4, retValoptimizerFCALL, retValmerged_summary_op, retValsummary_writer
 
 
     #####################################################
@@ -479,7 +502,18 @@ class MainTrainer:
             if self.slowMode:
                 time.sleep(5)
 
-            self.train(inputBatch, labelBatch, r)
+            optimizer = self.optimizerFC1
+
+            if r > 100000:
+                optimizer = self.optimizerFC2
+            if r > 200000:
+                optimizer = self.optimizerFC3
+            if r > 400000:
+                optimizer = self.optimizerFC4
+            if r > 800000:
+                optimizer = self.optimizerFCALL
+
+            self.train(inputBatch, labelBatch, r, optimizer)
             trainTime = time.time() - startTime
             trainTimePerSample_us = 1000000* (trainTime / self.params['BATCH_SIZE'])
 
@@ -503,7 +537,7 @@ class MainTrainer:
     #####################################################
     # learn by history
     #####################################################
-    def train(self, X_training, Y_training, iteration):
+    def train(self, X_training, Y_training, iteration, optimizer):
 
         assert self.sessionFC is not None and self.graphFC is not None
 
@@ -511,7 +545,7 @@ class MainTrainer:
 
         with self.graphFC.as_default() as g:
 
-            _, summary = self.sessionFC.run([self.optimizerFC, self.merged_summary_op], feed_dict=feed_dict_batch)
+            _, summary = self.sessionFC.run([optimizer, self.merged_summary_op], feed_dict=feed_dict_batch)
 
             if iteration%100 == 0:
                 self.summary_writer.add_summary(summary, iteration)
