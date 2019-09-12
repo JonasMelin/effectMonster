@@ -146,11 +146,18 @@ class MainTrainer:
             learning_rate = tf.train.exponential_decay(learning_rate, global_step, learning_rate_decay, 0.99,
                                                        staircase=True)
             cost = tf.reduce_mean(tf.square(y_modelFC - retValy_true_FC))
-            retValoptimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
+
+            # Probably meaningsless gradient clipping by norm. But it cant really hurt the sound quality..
+            opt_func = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+            tvars = tf.trainable_variables()
+            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), 1.0)
+            retValoptimizerFC = opt_func.apply_gradients(zip(grads, tvars))
+
+            #retValoptimizerFC = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step)
 
             # Tensorboard
             tensor_summaries_list = []
-            for tvar in tf.trainable_variables():
+            for tvar in tvars:
                 tensor_summaries_list.append(tf.summary.histogram(tvar.name, tvar))
             tf.summary.merge(tensor_summaries_list)
             tf.summary.scalar("1_loss", cost)

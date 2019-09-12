@@ -1,4 +1,9 @@
  - Install Bazel
+    - https://github.com/bazelbuild/bazel/releases/download/0.26.1/bazel-0.26.1-installer-linux-x86_64.sh
  - get git sourcecode
- - build your binary: bazel build --config=monolithic --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2   :RunGraph
+    - git clone https://github.com/tensorflow/tensorflow 
+ - build your binary: 
+    - Test: bazel build --config=monolithic //tensorflow:libtensorflow_cc.so
+    - bazel build --config=monolithic --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2 :RunGraph
+   
 

@@ -18,22 +18,27 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
 
         # CNN feature extraction layers
         layer = tf.reshape(retValxFC, [-1, int(retValxFC.shape[1]), 1])
-        layer = tf.layers.conv1d(layer, 32, 48, 1, padding='same', activation=leakyELU)
-        layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=leakyELU)
-        layer = tf.layers.conv1d(layer, 12, 24, 2, padding='same', activation=leakyELU)
-        layer = tf.layers.conv1d(layer, 6, 18, 2, padding='same', activation=leakyELU)
+        layer = tf.layers.conv1d(layer, 32, 48, 1, padding='same', activation=myActivation)
+        layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=myActivation)
+        layer = tf.layers.conv1d(layer, 12, 24, 2, padding='same', activation=myActivation)
+        layer = tf.layers.conv1d(layer, 6, 18, 2, padding='same', activation=myActivation)
 
         layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
 
         # Fully connected layers
 
-        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=leakyELU)
+        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=myActivation)
         retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
 
-def leakyELU(layer, alpha=0.01):
-    return tf.nn.elu(layer) + tf.constant(alpha, dtype=tf.float32) * layer
+#####################################################
+# Calculates the output from the FC network
+#####################################################
+def myActivation(layer, activationAlpha=0.002, dropoutRate=0.1):
+    layer = tf.nn.swish(layer) + tf.constant(activationAlpha, dtype=tf.float32) * layer
+    #layer = tf.nn.dropout(layer, rate=dropoutRate)
+    return layer
 
 #####################################################
 # Calculates the output from the FC network
