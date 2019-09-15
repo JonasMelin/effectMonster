@@ -502,14 +502,14 @@ class MainTrainer:
             if self.slowMode:
                 time.sleep(5)
 
-            optimizer = self.optimizerFC1
+            optimizer = self.optimizerFC4
 
             if r > 100000:
-                optimizer = self.optimizerFC2
-            if r > 200000:
                 optimizer = self.optimizerFC3
+            if r > 200000:
+                optimizer = self.optimizerFC2
             if r > 400000:
-                optimizer = self.optimizerFC4
+                optimizer = self.optimizerFC1
             if r > 800000:
                 optimizer = self.optimizerFCALL
 

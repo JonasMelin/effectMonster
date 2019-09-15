@@ -6,10 +6,13 @@ import math
 def defineCNNLayers(layer):
 
     layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
-    layer = tf.layers.conv1d(layer, 24, 48, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 12, 32, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 6, 24, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 3, 18, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 72, 48, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 24, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 48, 18, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 32, 12, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 24, 8, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 16, 4, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 8, 2, 2, padding='same', activation=myActivation)
     layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
     return layer
 
