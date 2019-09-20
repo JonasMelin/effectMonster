@@ -31,7 +31,7 @@ class MainTrainer:
                 BATCH_INF_SIZE = 200,  # How many samples for stats purpose
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size (#samples!!) When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
-                validationPercent = 0.03,  # e.g. 0.1 means 10% of the length of total sound will be validation
+                validationPercent = 0.40,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 learning_rate = 0.0002,
@@ -175,8 +175,6 @@ class MainTrainer:
             retValoptimizerFCALL = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
                                                                                               global_step=global_step,
                                                                                               var_list=PHASEALL_vars)
-
-
 
             # Tensorboard
             tensor_summaries_list = []
@@ -502,16 +500,18 @@ class MainTrainer:
             if self.slowMode:
                 time.sleep(5)
 
-            optimizer = self.optimizerFC4
+            optimizer = self.optimizerFCALL
 
-            if r > 100000:
-                optimizer = self.optimizerFC3
-            if r > 200000:
+            """
+            if r > 150000:
                 optimizer = self.optimizerFC2
-            if r > 400000:
-                optimizer = self.optimizerFC1
-            if r > 800000:
+            if r > 300000:
+                optimizer = self.optimizerFC3
+            if r > 600000:
+                optimizer = self.optimizerFC4
+            if r > 1000000:
                 optimizer = self.optimizerFCALL
+            """
 
             self.train(inputBatch, labelBatch, r, optimizer)
             trainTime = time.time() - startTime
