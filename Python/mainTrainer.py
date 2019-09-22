@@ -27,8 +27,8 @@ class MainTrainer:
                 disable_gpu = False,
                 per_process_gpu_memory_fraction = 0.20,
                 USE_RELU = True,  # False => sigmoid
-                BATCH_SIZE = 50,  # Batch size for training.
-                BATCH_INF_SIZE = 200,  # How many samples for stats purpose
+                BATCH_SIZE = 400,  # Batch size for training.
+                BATCH_INF_SIZE = 75,  # How many samples for stats purpose
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size (#samples!!) When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
                 validationPercent = 0.40,  # e.g. 0.1 means 10% of the length of total sound will be validation

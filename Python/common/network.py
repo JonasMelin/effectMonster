@@ -3,37 +3,21 @@ import time
 import numpy as np
 import math
 
-
-"""
-        # CNN feature extraction layers
-        layer = tf.reshape(retValxFC, [-1, int(retValxFC.shape[1]), 1])
-        layer = tf.layers.conv1d(layer, 32, 48, 1, padding='same', activation=myActivation)
-        layer = tf.layers.conv1d(layer, 24, 32, 2, padding='same', activation=myActivation)
-        layer = tf.layers.conv1d(layer, 12, 24, 2, padding='same', activation=myActivation)
-        layer = tf.layers.conv1d(layer, 6, 18, 2, padding='same', activation=myActivation)
-
-        layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
-
-        # Fully connected layers
-
-        layer = tf.contrib.layers.fully_connected(layer, int(int(layer.shape[1]) * 0.5), activation_fn=myActivation)
-        retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activatio
-
-"""
-
+#####################################################
+# Define the CCN layers.
+#####################################################
 def defineCNNLayers(layer):
     layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
-    layer = tf.layers.conv1d(layer, 96, 12, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 96, 10, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 96, 6, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 96, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 96, 4, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 96, 3, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 96, 2, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 6, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 4, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 3, 2, padding='same', activation=myActivation)
+    layer = tf.layers.conv1d(layer, 64, 2, 2, padding='same', activation=myActivation)
 
     layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
     return layer
-
 
 #####################################################
 # Define the neural network.
@@ -71,8 +55,8 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
 #####################################################
 # Calculates the output from the FC network
 #####################################################
-def myActivation(layer, activationAlpha=0.002, dropoutRate=0.1):
-    layer = tf.nn.swish(layer) + tf.constant(activationAlpha, dtype=tf.float32) * layer
+def myActivation(layer, activationAlpha=0.02, dropoutRate=0.1):
+    layer = tf.nn.tanh(layer)  # 14829784
     #layer = tf.nn.dropout(layer, rate=dropoutRate)
     return layer
 
