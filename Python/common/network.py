@@ -3,6 +3,8 @@ import time
 import numpy as np
 import math
 
+g_activation="swish"
+
 #####################################################
 # Define the CCN layers.
 #####################################################
@@ -22,7 +24,10 @@ def defineCNNLayers(layer):
 #####################################################
 # Define the neural network.
 #####################################################
-def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_fraction=0.85):
+def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_fraction=0.85, activation="tanh"):
+
+    global g_activation
+    g_activation = activation
 
     retValgraphFC = tf.Graph()
     retValsessionFC = tf.Session(graph=retValgraphFC, config=tf.ConfigProto(gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=per_process_gpu_memory_fraction)))
@@ -32,21 +37,8 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
         # Input!
         retValxFC = tf.placeholder(tf.float32, shape=[None, networkInputLen], name='xConv')
 
-        with tf.variable_scope('PHASE1') as scope:
+        with tf.variable_scope('Variables') as scope:
             layerCNN1 = defineCNNLayers(retValxFC)
-            #layerFC1 = tf.contrib.layers.fully_connected(layerCNN1, int(int(layerCNN1.shape[1]) * 0.25), activation_fn=myActivation)
-        """
-        with tf.variable_scope('PHASE2') as scope:
-            layerCNN2 = defineCNNLayers(retValxFC)
-            layerFC2 = tf.contrib.layers.fully_connected(layerCNN2, int(int(layerCNN2.shape[1]) * 0.25), activation_fn=myActivation, weights_initializer=tf.truncated_normal_initializer(stddev=0.01, dtype=tf.float32))
-        with tf.variable_scope('PHASE3') as scope:
-            layerCNN3 = defineCNNLayers(retValxFC)
-            layerFC3 = tf.contrib.layers.fully_connected(layerCNN3, int(int(layerCNN3.shape[1]) * 0.25), activation_fn=myActivation, weights_initializer=tf.truncated_normal_initializer(stddev=0.01, dtype=tf.float32))
-        with tf.variable_scope('PHASE4') as scope:
-            layerCNN4 = defineCNNLayers(retValxFC)
-            layerFC4 = tf.contrib.layers.fully_connected(layerCNN4, int(int(layerCNN4.shape[1]) * 0.25), activation_fn=myActivation, weights_initializer=tf.truncated_normal_initializer(stddev=0.01, dtype=tf.float32))
-        """
-        with tf.variable_scope('PHASE1_PHASE2_PHASE3_PHASE4') as scope:
             layer = layerCNN1 #tf.concat([layerFC1], 1)
             retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
@@ -56,8 +48,17 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
 # Calculates the output from the FC network
 #####################################################
 def myActivation(layer, activationAlpha=0.02, dropoutRate=0.1):
-    layer = tf.nn.tanh(layer)  # 14829784
-    #layer = tf.nn.dropout(layer, rate=dropoutRate)
+
+    global g_activation
+    if g_activation is "tanh":
+        layer = tf.nn.tanh(layer)
+    elif g_activation is "swish":
+        layer = tf.nn.swish(layer)
+    elif g_activation is "lrelu":
+        layer = tf.nn.leaky_relu(layer)
+    else:
+        raise ValueError(f"BAD ACTIVATION {g_activation}")
+
     return layer
 
 #####################################################

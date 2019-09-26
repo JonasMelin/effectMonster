@@ -35,7 +35,7 @@ class MainTrainer:
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 learning_rate = 0.0002,
-                learning_rate_decay = 1500000 , # Higher gives slower decay
+                learning_rate_decay = 6000000 , # Higher gives slower decay
                 networkInputLen = defs.networkInputLen,
                 networkOutputLen = defs.networkOutputLen,
                 encoderBullsEyeSize = 55,
@@ -82,7 +82,7 @@ class MainTrainer:
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
             self.params['networkInputLen'], self.params['networkOutputLen'],
             per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)
-        self.y_true_FC, self.optimizerFC1, self.optimizerFC2, self.optimizerFC3, self.optimizerFC4, self.optimizerFCALL, self.merged_summary_op, self.summary_writer = self.trainingSetup(
+        self.y_true_FC, self.optimizerFCALL, self.merged_summary_op, self.summary_writer = self.trainingSetup(
             self.y_modelFC, self.graphFC,  self.sessionFC, defs.fullGraphPath,
             self.tensorboardFullPath, self.params['networkOutputLen'],
             self.params['learning_rate'], self.params['learning_rate_decay'])
@@ -96,8 +96,6 @@ class MainTrainer:
         self.printCounter = 0
 
         print(f"output_node_name for frozen graph: {self.y_modelFC.name.split(':')[0]}")
-
-
 
         try:
             os.mkdir(self.tensorboardFullPath)
@@ -154,27 +152,9 @@ class MainTrainer:
             #retValoptimizerFC = opt_func.apply_gradients(zip(grads, tvars))
 
             tvars = tf.trainable_variables()
-            PHASE1_vars = [var for var in tvars if ('PHASE1' in var.name)]
-            PHASE2_vars = [var for var in tvars if ('PHASE2' in var.name)]
-            PHASE3_vars = [var for var in tvars if ('PHASE3' in var.name)]
-            PHASE4_vars = [var for var in tvars if ('PHASE4' in var.name)]
             PHASEALL_vars = tvars
 
-            retValoptimizerFC1 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
-                                                                                              global_step=global_step,
-                                                                                              var_list=PHASE1_vars)
-            retValoptimizerFC2 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
-                                                                                              global_step=global_step,
-                                                                                              var_list=PHASE2_vars)
-            retValoptimizerFC3 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
-                                                                                              global_step=global_step,
-                                                                                              var_list=PHASE3_vars)
-            retValoptimizerFC4 = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
-                                                                                              global_step=global_step,
-                                                                                              var_list=PHASE4_vars)
-            retValoptimizerFCALL = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost,
-                                                                                              global_step=global_step,
-                                                                                              var_list=PHASEALL_vars)
+            retValoptimizerFCALL = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step, var_list=PHASEALL_vars)
 
             # Tensorboard
             tensor_summaries_list = []
@@ -188,7 +168,7 @@ class MainTrainer:
 
             network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath)
             self.totalVariablesCount = self.countTotalWeights()
-            return retValy_true_FC, retValoptimizerFC1, retValoptimizerFC2, retValoptimizerFC3, retValoptimizerFC4, retValoptimizerFCALL, retValmerged_summary_op, retValsummary_writer
+            return retValy_true_FC, retValoptimizerFCALL, retValmerged_summary_op, retValsummary_writer
 
 
     #####################################################
@@ -501,17 +481,6 @@ class MainTrainer:
                 time.sleep(5)
 
             optimizer = self.optimizerFCALL
-
-            """
-            if r > 150000:
-                optimizer = self.optimizerFC2
-            if r > 300000:
-                optimizer = self.optimizerFC3
-            if r > 600000:
-                optimizer = self.optimizerFC4
-            if r > 1000000:
-                optimizer = self.optimizerFCALL
-            """
 
             self.train(inputBatch, labelBatch, r, optimizer)
             trainTime = time.time() - startTime
