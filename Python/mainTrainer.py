@@ -478,7 +478,7 @@ class MainTrainer:
             startTime = time.time()
 
             if self.slowMode:
-                time.sleep(5)
+                time.sleep(0.5)
 
             optimizer = self.optimizerFCALL
 

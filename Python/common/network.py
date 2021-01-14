@@ -3,7 +3,7 @@ import time
 import numpy as np
 import math
 
-g_activation="swish"
+g_activation="relutanh"
 
 #####################################################
 # Define the CCN layers.
@@ -15,8 +15,8 @@ def defineCNNLayers(layer):
     layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
     layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
     layer = tf.layers.conv1d(layer, 64, 4, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 3, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 2, 2, padding='same', activation=myActivation)
+    #layer = tf.layers.conv1d(layer, 64, 3, 2, padding='same', activation=myActivation)
+    #layer = tf.layers.conv1d(layer, 64, 2, 2, padding='same', activation=myActivation)
 
     layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
     return layer
@@ -40,6 +40,7 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
         with tf.variable_scope('Variables') as scope:
             layerCNN1 = defineCNNLayers(retValxFC)
             layer = layerCNN1 #tf.concat([layerFC1], 1)
+            layer = myActivation(tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=None))
             retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
@@ -56,6 +57,12 @@ def myActivation(layer, activationAlpha=0.02, dropoutRate=0.1):
         layer = tf.nn.swish(layer)
     elif g_activation is "lrelu":
         layer = tf.nn.leaky_relu(layer)
+    elif g_activation is "relu":
+        layer = tf.nn.relu(layer)
+    elif g_activation is "relusigmoid":
+        layer = tf.nn.relu(layer) * tf.nn.sigmoid(layer)
+    elif g_activation is "relutanh":
+        layer = tf.nn.relu(layer) * tf.nn.tanh(layer)
     else:
         raise ValueError(f"BAD ACTIVATION {g_activation}")
 
