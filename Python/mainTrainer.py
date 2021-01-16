@@ -34,15 +34,15 @@ class MainTrainer:
                 validationPercent = 0.40,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
-                learning_rate = 0.0002,
-                learning_rate_decay = 6000000 , # Higher gives slower decay
+                learning_rate = 0.0005,
+                learning_rate_decay = 3000000 , # Higher gives slower decay
                 networkInputLen = defs.networkInputLen,
                 networkOutputLen = defs.networkOutputLen,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
                 maxTrainingSamplesInMem=250000,
-                effectiveInferenceOutputLen = 128,
-                inferenceOverlap = 8,
+                effectiveInferenceOutputLen = 8,
+                inferenceOverlap = 4,
                 lowPassFilterSteps = 0,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 

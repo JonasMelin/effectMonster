@@ -9,17 +9,28 @@ g_activation="relutanh"
 # Define the CCN layers.
 #####################################################
 def defineCNNLayers(layer):
-    layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
-    layer = tf.layers.conv1d(layer, 64, 6, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 4, 2, padding='same', activation=myActivation)
-    #layer = tf.layers.conv1d(layer, 64, 3, 2, padding='same', activation=myActivation)
-    #layer = tf.layers.conv1d(layer, 64, 2, 2, padding='same', activation=myActivation)
+    layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1], name="reshapeInput")
+    layer0CNN = tf.layers.conv1d(layer, 16, 24, 2, padding='same', activation=myActivation, name="CNN0")
+    layer1CNN = tf.layers.conv1d(layer0CNN, 16, 16, 2, padding='same', activation=myActivation, name="CNN1")
 
-    layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
-    return layer
+    layer2CNN = tf.layers.conv1d(layer1CNN, 16, 12, 2, padding='same', activation=myActivation, name="CNN2")
+    layer2FC = tf.reshape(layer2CNN, [-1, int(layer2CNN.shape[1] * layer2CNN.shape[2])], name="reshapeCNN3")
+    layer2FC = myActivation(tf.contrib.layers.fully_connected(layer2FC, int(int(layer2CNN.shape[1] * layer2CNN.shape[2]) / 4), activation_fn=None))
+    layer2FC = tf.reshape(layer2FC, [-1, int(int(layer2CNN.shape[1]) / 4), int(layer2CNN.shape[2])])
+
+    layer3CNN = tf.layers.conv1d(layer2FC, 16, 10, 2, padding='same', activation=myActivation, name="CNN3")
+    layer3FC = tf.reshape(layer3CNN, [-1, int(layer3CNN.shape[1] * layer3CNN.shape[2])], name="reshapeCNN3")
+    layer3FC = myActivation(tf.contrib.layers.fully_connected(layer3FC, int(int(layer3CNN.shape[1] * layer3CNN.shape[2]) / 2), activation_fn=None))
+    layer3FC = tf.reshape(layer3FC, [-1, int(int(layer3CNN.shape[1])/2), int(layer3CNN.shape[2])])
+
+    layer4CNN = tf.layers.conv1d(layer3FC, 16, 8, 2, padding='same', activation=myActivation, name="CNN4")
+    layer4FC = tf.reshape(layer4CNN, [-1, int(layer4CNN.shape[1] * layer4CNN.shape[2])], name="reshapeCNN4")
+    layer4FC = myActivation(tf.contrib.layers.fully_connected(layer4FC, int(int(layer4CNN.shape[1] * layer4CNN.shape[2]) / 2), activation_fn=None))
+    layer4FC = tf.reshape(layer4FC, [-1, int(int(layer4CNN.shape[1])/2), int(layer4CNN.shape[2])])
+
+    layer5CNN = tf.layers.conv1d(layer4FC, 16, 6, 2, padding='same', activation=myActivation, name="CNN5")
+
+    return tf.reshape(layer5CNN, [-1, int(layer5CNN.shape[1] * layer5CNN.shape[2])], name="reshapeAfterFCLast")
 
 #####################################################
 # Define the neural network.
@@ -38,10 +49,18 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
         retValxFC = tf.placeholder(tf.float32, shape=[None, networkInputLen], name='xConv')
 
         with tf.variable_scope('Variables') as scope:
-            layerCNN1 = defineCNNLayers(retValxFC)
-            layer = layerCNN1 #tf.concat([layerFC1], 1)
-            layer = myActivation(tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=None))
-            retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
+            layerCNN4 = defineCNNLayers(retValxFC)
+            #layerFC1 = tf.reshape(retValxFC, [-1, int(retValxFC.shape[1])])
+            #layerFC2 = myActivation(tf.contrib.layers.fully_connected(layerFC1, 256, activation_fn=None))
+
+            #layerA = layerCNN4 #tf.concat([layerCNN1, layerCNN2, layerCNN3, layerCNN4], 1)
+            #layer = myActivation(tf.contrib.layers.fully_connected(layerA, networkOutputLen * 4, activation_fn=None))  ## """int(int(layerA.shape[1]) / 4)"""
+            #layer = tf.concat([layer, layerA], 1)
+            #layer = myActivation(tf.contrib.layers.fully_connected(layer, networkOutputLen * 3, activation_fn=None))
+            #layer = tf.concat([layer, layerA], 1)
+            #layer = myActivation(tf.contrib.layers.fully_connected(layer, networkOutputLen * 2, activation_fn=None))
+            #layer = tf.concat([layer, layerA], 1)
+            retValy_modelFC = tf.contrib.layers.fully_connected(layerCNN4, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
 
