@@ -25,7 +25,7 @@ class MainTrainer:
     def __init__(
                 self,
                 disable_gpu = False,
-                per_process_gpu_memory_fraction = 0.20,
+                per_process_gpu_memory_fraction = 0.15,
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 400,  # Batch size for training.
                 BATCH_INF_SIZE = 75,  # How many samples for stats purpose
@@ -35,12 +35,12 @@ class MainTrainer:
                 maxValidationSampleCount = 1500000,
                 MIN_STEPS_BETWEEN_SAVES = 6000,
                 learning_rate = 0.0005,
-                learning_rate_decay = 3000000 , # Higher gives slower decay
+                learning_rate_decay = 2000000 , # Higher gives slower decay
                 networkInputLen = defs.networkInputLen,
                 networkOutputLen = defs.networkOutputLen,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
-                maxTrainingSamplesInMem=250000,
+                maxTrainingSamplesInMem=100000,
                 effectiveInferenceOutputLen = 8,
                 inferenceOverlap = 4,
                 lowPassFilterSteps = 0,
@@ -166,7 +166,7 @@ class MainTrainer:
             retValmerged_summary_op = tf.summary.merge_all()
             retValsummary_writer = tf.summary.FileWriter(tensorboardFullPath, sessionFC.graph)
 
-            network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath)
+            network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath, forceClean=True)
             self.totalVariablesCount = self.countTotalWeights()
             return retValy_true_FC, retValoptimizerFCALL, retValmerged_summary_op, retValsummary_writer
 
