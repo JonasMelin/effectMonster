@@ -15,7 +15,7 @@ def defineNetworkLayers(layer, networkOutputLen):
 
     inputLayer = tf.reshape(layer, [-1, int(layer.shape[1]), 1], name="reshapeInput")
 
-    with tf.variable_scope(f"FClvl{'X'}_blck0") as scope:
+    with tf.variable_scope(f"FClvl{1}_blck0") as scope:
         layer1CNN = tf.layers.conv1d(inputLayer, g_CnnChannels, 48, 2, padding='same', activation=myActivation, name="CNN1")
         layer2CNN = tf.layers.conv1d(layer1CNN, g_CnnChannels, 8, 2, padding='same', activation=myActivation, name="CNN2")
         layer3CNN = tf.layers.conv1d(layer2CNN, g_CnnChannels, 6, 2, padding='same', activation=myActivation, name="CNN3")
@@ -29,13 +29,12 @@ def defineNetworkLayers(layer, networkOutputLen):
     layer9FC = createFCBlock(layer8Flat, int(int(layer8CNN.shape[1] * layer8CNN.shape[2]) / 4), 2, 9, myActivation)
     layer9Flat = tf.reshape(layer9FC, [-1, int(int(layer8CNN.shape[1])/2) * int(layer8CNN.shape[2]), 1])
 
-    with tf.variable_scope(f"FClvl{'Y'}_blck0") as scope:
+    with tf.variable_scope(f"FClvl{11}_blck0") as scope:
         layer10CNN = tf.layers.conv1d(layer9Flat, g_CnnChannels, 18, 2, padding='same', activation=myActivation, name="CNN10")
         layer11CNN = tf.layers.conv1d(layer10CNN, g_CnnChannels, 3, 2, padding='same', activation=myActivation, name="CNN11")
         layer11Flat = tf.reshape(layer11CNN, [-1, int(layer11CNN.shape[1] * layer11CNN.shape[2])], name="reshape11")
 
-    layer12FC = createFCBlock(layer11Flat, int(networkOutputLen / 2), 2, 11, tf.nn.tanh)
-    return layer12FC
+    return createFCBlock(layer11Flat, int(networkOutputLen / 2), 2, 11, tf.nn.tanh)
 
 def createFCBlock(input, blockSize, blocks, level, activation):
 

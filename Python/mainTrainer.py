@@ -82,10 +82,14 @@ class MainTrainer:
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
             self.params['networkInputLen'], self.params['networkOutputLen'],
             per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)
-        self.y_true_FC, self.optimizerFCALL, self.merged_summary_op, self.summary_writer = self.trainingSetup(
+        self.y_true_FC, self.merged_summary_op, self.summary_writer, \
+        self.LR, self.cost, self.global_step = self.trainingSetup(
             self.y_modelFC, self.graphFC,  self.sessionFC, defs.fullGraphPath,
             self.tensorboardFullPath, self.params['networkOutputLen'],
             self.params['learning_rate'], self.params['learning_rate_decay'])
+
+        self.optimizerFCALL = self.optimizer(self.graphFC, self.cost, self.sessionFC, {1:1, 2:1, 3:1, 4:1, 5:1, 6:1, 7:1, 8:1, 9: 2, 10:1, 11: 1})
+
         self.audio = audioHandler.AudioHandler()
         self.plotter = audioPlotter.AudioPlotter()
         self.trainingData = []
@@ -141,8 +145,7 @@ class MainTrainer:
             # cost functions and optimizers..
             retValy_true_FC = tf.placeholder(tf.float32, shape=[None, networkOutputLen], name='y_trueFC')
             global_step = tf.Variable(0, trainable=False)
-            learning_rate = tf.train.exponential_decay(learning_rate, global_step, learning_rate_decay, 0.99,
-                                                       staircase=True)
+            learning_rate = tf.train.exponential_decay(learning_rate, global_step, learning_rate_decay, 0.99, staircase=True)
             cost = tf.reduce_mean(tf.square(y_modelFC - retValy_true_FC))
 
             # Probably meaningsless gradient clipping by norm. But it cant really hurt the sound quality..
@@ -151,25 +154,66 @@ class MainTrainer:
             #grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), 1.0)
             #retValoptimizerFC = opt_func.apply_gradients(zip(grads, tvars))
 
-            tvars = tf.trainable_variables()
-            PHASEALL_vars = tvars
 
-            retValoptimizerFCALL = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, global_step=global_step, var_list=PHASEALL_vars)
 
             # Tensorboard
             tensor_summaries_list = []
-            for tvar in tvars:
+            for tvar in tf.trainable_variables():
                 tensor_summaries_list.append(tf.summary.histogram(tvar.name, tvar))
             tf.summary.merge(tensor_summaries_list)
             tf.summary.scalar("1_loss", cost)
             tf.summary.scalar("3_learning_rate", learning_rate)
+
+
             retValmerged_summary_op = tf.summary.merge_all()
             retValsummary_writer = tf.summary.FileWriter(tensorboardFullPath, sessionFC.graph)
 
             network.restoreGraphFromDisk(sessionFC, self.graphFC, fullGraphPath, forceClean=True)
-            self.totalVariablesCount = self.countTotalWeights()
-            return retValy_true_FC, retValoptimizerFCALL, retValmerged_summary_op, retValsummary_writer
 
+            self.totalVariablesCount = self.countTotalWeights()
+
+            return retValy_true_FC, retValmerged_summary_op, retValsummary_writer, learning_rate, cost, global_step
+
+    def optimizer(self, graphFC, cost, sessionFC, trainBlockMap = None):
+
+        with graphFC.as_default() as g:
+            allVars = tf.trainable_variables()
+            trainVars = []
+            K = 1000000
+            learnRateMax = 0.0005
+
+            if trainBlockMap is None:
+                trainVars = allVars
+            else:
+                lrSortedVarList = {}
+
+                for layer, blocks in trainBlockMap.items():
+
+                    for block in range(blocks):
+                        LR = int(K * 1 / (1 + (blocks - block - 1) * (blocks - block - 1)))
+                        vars = [var for var in allVars if f"FClvl{layer}_blck{block}" in var.name]
+
+                        if len(vars) == 0:
+                            continue
+
+                        if LR not in lrSortedVarList:
+                            lrSortedVarList[LR] = []
+
+                        lrSortedVarList[LR].extend(vars)
+
+
+
+            optimizers = []
+            for lrRaw, varList in lrSortedVarList.items():
+                lr = learnRateMax * lrRaw / K
+                opt = tf.train.AdamOptimizer(learning_rate=lr)
+                res = opt.minimize(
+                    cost,
+                    var_list=varList)
+                optimizers.append(res)
+                sessionFC.run(tf.variables_initializer(opt.variables()))
+
+            return tf.group(optimizers)
 
     #####################################################
     # Count the number of variables in the network
@@ -342,12 +386,16 @@ class MainTrainer:
 
         for r in range(11111111):
 
+
+
             if r < 0:
                 sameOutput = True
             else:
                 sameOutput = False
 
             if r % math.floor(self.params['STATS_EVERY']) is 0:
+
+                self.optimizerFCALL = self.optimizer(self.graphFC, self.cost, self.sessionFC, {1:1, 2:1, 3:1, 4:1, 5:1, 6:1, 7:1, 8:1, 9: 2, 10:1, 11: 1})
 
                 #
                 # GREATE METRICS TO TENSORBOARD
