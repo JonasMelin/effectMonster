@@ -25,25 +25,26 @@ class MainTrainer:
     def __init__(
                 self,
                 disable_gpu = False,
-                per_process_gpu_memory_fraction = 0.20,
+                per_process_gpu_memory_fraction = 0.60,
                 USE_RELU = True,  # False => sigmoid
                 BATCH_SIZE = 400,  # Batch size for training.
                 BATCH_INF_SIZE = 75,  # How many samples for stats purpose
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size (#samples!!) When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
-                validationPercent = 0.40,  # e.g. 0.1 means 10% of the length of total sound will be validation
-                maxValidationSampleCount = 1500000,
-                MIN_STEPS_BETWEEN_SAVES = 6000,
+                validationPercent = 0.15,  # e.g. 0.1 means 10% of the length of total sound will be validation
+                maxValidationSampleCount = 1000000,
+                MIN_STEPS_BETWEEN_SAVES = 2000,
                 learning_rate = 0.0002,
                 learning_rate_decay = 6000000 , # Higher gives slower decay
                 networkInputLen = defs.networkInputLen,
                 networkOutputLen = defs.networkOutputLen,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
-                maxTrainingSamplesInMem=250000,
+                maxTrainingSamplesInMem=25000,
                 effectiveInferenceOutputLen = 128,
                 inferenceOverlap = 8,
                 lowPassFilterSteps = 0,
+                channels = 2,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -74,13 +75,14 @@ class MainTrainer:
             'maxTrainingSamplesInMem': maxTrainingSamplesInMem,
             'inferenceOverlap' : inferenceOverlap,
             'effectiveInferenceOutputLen': effectiveInferenceOutputLen,
-            'lowPassFilterSteps': lowPassFilterSteps
+            'lowPassFilterSteps': lowPassFilterSteps,
+            'channels': channels
         }
         print(f"Unique session number: {self.params['uniqueSessionNumber']}")
         self.totalVariablesCount = 0
         self.tensorboardFullPath = os.path.join(defs.TENSORBOARD_PATH, self.params['uniqueSessionNumber'])
         self.graphFC, self.sessionFC, self.xFC, self.y_modelFC = network.defineFCModel(
-            self.params['networkInputLen'], self.params['networkOutputLen'],
+            self.params['networkInputLen'], self.params['channels'], self.params['networkOutputLen'],
             per_process_gpu_memory_fraction=self.per_process_gpu_memory_fraction)
         self.y_true_FC, self.optimizerFCALL, self.merged_summary_op, self.summary_writer = self.trainingSetup(
             self.y_modelFC, self.graphFC,  self.sessionFC, defs.fullGraphPath,
@@ -197,7 +199,7 @@ class MainTrainer:
     #####################################################
     def threadFuncPrepareData(self, inputSound, labelSound, dataOutput, name="", continouslyReplaceWithNewData=False):
 
-        sampleSteps = inputSound["sampleCount"] - 1 - self.params['networkInputLen']
+        sampleSteps = inputSound["sampleCount"] - 1 - self.params['networkInputLen'] * ( 2 ** self.params['channels'])
 
         if continouslyReplaceWithNewData:
             loopCount = self.params['maxTrainingSamplesInMem']
@@ -208,21 +210,21 @@ class MainTrainer:
 
             for r in range(loopCount):
 
-                if not continouslyReplaceWithNewData:
-                    # Take all provided samples from inputSound and prepare them
-                    nextInputDataSlize = self.audio.getAPieceOfSound(inputSound, r, self.params['networkInputLen'])
-                    nextLabelDataSlize = self.audio.getAPieceOfSound(labelSound, r, self.params['networkInputLen'])
+                if continouslyReplaceWithNewData:
+                    offset = random.randint(0,sampleSteps)
                 else:
-                    # Take a random set of samples
-                    sampleStartPos = random.randint(0,sampleSteps)
-                    nextInputDataSlize = self.audio.getAPieceOfSound(inputSound, sampleStartPos, self.params['networkInputLen'])
-                    nextLabelDataSlize = self.audio.getAPieceOfSound(labelSound, sampleStartPos, self.params['networkInputLen'])
+                    offset = r
 
-                input = nextInputDataSlize["scaledData"]
+                input = []
+                for c in range(self.params['channels']):
+
+                    input = np.concatenate([input, self.audio.getAPieceOfSound(inputSound, offset, self.params['networkInputLen'] * (2 ** c), skipSamples= (2 ** c))["scaledData"]])
+
+                nextLabelDataSlize = self.audio.getAPieceOfSound(labelSound, offset, self.params['networkInputLen'])
+
                 label = np.array(nextLabelDataSlize["scaledData"][-self.params['networkOutputLen']:]).reshape(self.params['networkOutputLen'])
-                quantArrayLabel = label
 
-                reshapedInput = input.reshape(-1, self.params['networkInputLen'])
+                reshapedInput = input.reshape(-1, self.params['networkInputLen'] * self.params['channels'])
                 reshapedLabel = label.reshape(-1, self.params['networkOutputLen'])
                 reshapedQuantArrayLabel = None
 
@@ -333,6 +335,7 @@ class MainTrainer:
                 len(self.validationData) < self.params['BATCH_INF_SIZE']:
             print("Waiting for data to be processed")
             time.sleep(1)
+        print("Enough data read in order to start")
 
         self.audio.writeSoundToDir(inputSound, defs.WAV_FILE_OUTPUT, "InputSoundTrain")
         self.audio.writeSoundToDir(labelSound, defs.WAV_FILE_OUTPUT, "LabelSoundTrain")
@@ -350,7 +353,7 @@ class MainTrainer:
             if r % math.floor(self.params['STATS_EVERY']) is 0:
 
                 #
-                # GREATE METRICS TO TENSORBOARD
+                # CREATE METRICS TO TENSORBOARD
                 #
                 error = 0
                 generatorPrecisionError = 0
@@ -358,7 +361,7 @@ class MainTrainer:
 
 
                 with self.globalLock:
-                    inputBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkInputLen']))
+                    inputBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkInputLen'] * self.params['channels']))
                     labelBatch = np.zeros(shape=(self.params['BATCH_INF_SIZE'], self.params['networkOutputLen']))
                     finalOutInfVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']))
                     finalOutLabelVariance = np.zeros(shape=(self.params['BATCH_INF_SIZE'] * self.params['networkOutputLen']))
@@ -389,7 +392,7 @@ class MainTrainer:
                 # Run a shorter inference piece in order to get a error of the FFT over the label vs inference
                 pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, defs.FFT_DiffLength)
                 pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, defs.FFT_DiffLength)
-                infOutSound, infTime = network.runInferenceOnSoundSampleBySample(pieceOfInputSound, self.audio, self.params['networkInputLen'],
+                infOutSound, infTime = network.runInferenceOnSoundSampleBySample(pieceOfInputSound, self.audio, self.params['networkInputLen'],  self.params['channels'],
                                                                         self.params['networkOutputLen'], self.params['inferenceOverlap'],
                                                                         self.params['effectiveInferenceOutputLen'],
                                                                         self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'],
@@ -447,7 +450,7 @@ class MainTrainer:
 
                         pieceOfInputSound = self.audio.getAPieceOfSound(inputSoundVal, 0, inputSoundVal["sampleCount"])
                         pieceOfLabelSound = self.audio.getAPieceOfSound(labelSoundVal, 0, labelSoundVal["sampleCount"])
-                        infOutSound, infTime = network.runInferenceOnSoundSampleBySample(pieceOfInputSound, self.audio, self.params['networkInputLen'],
+                        infOutSound, infTime = network.runInferenceOnSoundSampleBySample(pieceOfInputSound, self.audio, self.params['networkInputLen'],  self.params['channels'],
                                                                         self.params['networkOutputLen'], self.params['inferenceOverlap'],
                                                                         self.params['effectiveInferenceOutputLen'],
                                                                         self.params['BATCH_SIZE_INFERENCE_FULL_SOUND'],
@@ -458,7 +461,7 @@ class MainTrainer:
             # TRAIN
             #
             with self.globalLock:
-                inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkInputLen']))
+                inputBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkInputLen'] * self.params['channels']))
                 labelBatch = np.zeros(shape=(self.params['BATCH_SIZE'],self.params['networkOutputLen']))
 
                 for p in range(self.params['BATCH_SIZE']):
@@ -478,7 +481,7 @@ class MainTrainer:
             startTime = time.time()
 
             if self.slowMode:
-                time.sleep(0.5)
+                time.sleep(0.3)
 
             optimizer = self.optimizerFCALL
 

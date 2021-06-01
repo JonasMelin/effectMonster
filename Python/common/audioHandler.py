@@ -145,18 +145,18 @@ class AudioHandler:
     # ############################################################################
     # returns a piece of sound from a longer sound
     # ############################################################################
-    def getAPieceOfSound(self, soundData, offset, length=None):
+    def getAPieceOfSound(self, soundData, offset, length=None, skipSamples = 1):
 
         if length is None:
             length = soundData['data'].shape[0]
 
         if length > soundData["scaledData"].shape[0] - offset:
-                length = soundData["scaledData"].shape[0] - offset
+            length = soundData["scaledData"].shape[0] - offset
 
         return {
             "sampleRate": soundData["sampleRate"],
-            "data": soundData["data"][offset:length+offset],
-            "scaledData" : soundData["scaledData"][offset:length+offset],
+            "data": soundData["data"][offset:length+offset][0::skipSamples],
+            "scaledData" : soundData["scaledData"][offset:length+offset][0::skipSamples],
             "frequencySpectrum": None,
             "spectrumLen": 0,
             "fileName": soundData["fileName"]+"Cut",

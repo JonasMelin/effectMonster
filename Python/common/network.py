@@ -8,13 +8,13 @@ g_activation="relutanh"
 #####################################################
 # Define the CCN layers.
 #####################################################
-def defineCNNLayers(layer):
-    layer = tf.reshape(layer, [-1, int(layer.shape[1]), 1])
+def defineCNNLayers(layer, channels):
+    layer = tf.reshape(layer, [-1, int(int(layer.shape[1]) / channels), channels])
     layer = tf.layers.conv1d(layer, 64, 6, 2, padding='same', activation=myActivation)
     layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
     layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
     layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 4, 2, padding='same', activation=myActivation)
+    #layer = tf.layers.conv1d(layer, 64, 4, 2, padding='same', activation=myActivation)
     #layer = tf.layers.conv1d(layer, 64, 3, 2, padding='same', activation=myActivation)
     #layer = tf.layers.conv1d(layer, 64, 2, 2, padding='same', activation=myActivation)
 
@@ -24,7 +24,7 @@ def defineCNNLayers(layer):
 #####################################################
 # Define the neural network.
 #####################################################
-def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_fraction=0.85, activation="tanh"):
+def defineFCModel(networkInputLen, channels, networkOutputLen, per_process_gpu_memory_fraction=0.85, activation="lrelutanh"):
 
     global g_activation
     g_activation = activation
@@ -35,12 +35,12 @@ def defineFCModel(networkInputLen, networkOutputLen, per_process_gpu_memory_frac
     with retValgraphFC.as_default() as g:
 
         # Input!
-        retValxFC = tf.placeholder(tf.float32, shape=[None, networkInputLen], name='xConv')
+        retValxFC = tf.placeholder(tf.float32, shape=[None, networkInputLen * channels], name='xConv')
 
         with tf.variable_scope('Variables') as scope:
-            layerCNN1 = defineCNNLayers(retValxFC)
+            layerCNN1 = defineCNNLayers(retValxFC, channels)
             layer = layerCNN1 #tf.concat([layerFC1], 1)
-            layer = myActivation(tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=None))
+            layer = myActivation(tf.contrib.layers.fully_connected(layer, networkOutputLen * 4, activation_fn=None))
             retValy_modelFC = tf.contrib.layers.fully_connected(layer, networkOutputLen, activation_fn=tf.keras.activations.tanh)
 
         return retValgraphFC, retValsessionFC, retValxFC, retValy_modelFC
@@ -59,10 +59,12 @@ def myActivation(layer, activationAlpha=0.02, dropoutRate=0.1):
         layer = tf.nn.leaky_relu(layer)
     elif g_activation is "relu":
         layer = tf.nn.relu(layer)
-    elif g_activation is "relusigmoid":
-        layer = tf.nn.relu(layer) * tf.nn.sigmoid(layer)
-    elif g_activation is "relutanh":
-        layer = tf.nn.relu(layer) * tf.nn.tanh(layer)
+    elif g_activation is "sigmoid":
+        layer = tf.nn.sigmoid(layer)
+    elif g_activation is "relusigmoidspecial":
+        layer = tf.nn.sigmoid(layer) * tf.math.abs(layer + 4)
+    elif g_activation is "lrelutanh":
+        layer = 0.1 * tf.nn.leaky_relu(layer) + tf.nn.tanh(layer)
     else:
         raise ValueError(f"BAD ACTIVATION {g_activation}")
 
@@ -94,7 +96,7 @@ def restoreGraphFromDisk(sessionFC, graphFC, fullGraphPath):
 #####################################################
 # Runs inference with sliding window over an entire sound.
 #####################################################
-def runInferenceOnSoundSampleBySample(soundData, audio, networkInputLen,
+def runInferenceOnSoundSampleBySample(soundData, audio, networkInputLen, channels,
                                       networkOutputLen, inferenceOverlap, effectiveInferenceOutputLen,
                                       BATCH_SIZE_INFERENCE_FULL_SOUND, sessionFC, graphFC, xFC, y_modelFC):
 
@@ -114,11 +116,13 @@ def runInferenceOnSoundSampleBySample(soundData, audio, networkInputLen,
             inputBatch = []
 
             for e in range(math.floor(BATCH_SIZE_INFERENCE_FULL_SOUND / effectiveInferenceOutputLen)):
-                nextDataSlize = audio.getAPieceOfSound(soundData, inferenceCounter, networkInputLen)
-                reshapedDataSlize = nextDataSlize["scaledData"].reshape(networkInputLen)
-                inputBatch.append(reshapedDataSlize)
+                nextFullDataSlice2 = []
+                for c in range(channels):
+                    nextFullDataSlice2 = np.concatenate([nextFullDataSlice2, audio.getAPieceOfSound(soundData, inferenceCounter, networkInputLen * (2 ** c), skipSamples=(2 ** c))["scaledData"]])
+
+                inputBatch.append(nextFullDataSlice2.reshape(networkInputLen * channels))
                 inferenceCounter += effectiveInferenceOutputLen - inferenceOverlap
-                if inferenceCounter >= (soundData["sampleCount"] - networkInputLen - 1):
+                if inferenceCounter >= (soundData["sampleCount"] - networkInputLen * (2 ** channels) - 1):
                     done = True
                     break
 
