@@ -9,22 +9,28 @@ g_activation="relutanh"
 # Define the CCN layers.
 #####################################################
 def defineCNNLayers(layer, channels):
-    layer = tf.reshape(layer, [-1, int(int(layer.shape[1]) / channels), channels])
-    layer = tf.layers.conv1d(layer, 64, 6, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
-    #layer = tf.layers.conv1d(layer, 64, 4, 2, padding='same', activation=myActivation)
-    #layer = tf.layers.conv1d(layer, 64, 3, 2, padding='same', activation=myActivation)
-    #layer = tf.layers.conv1d(layer, 64, 2, 2, padding='same', activation=myActivation)
 
-    layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
+    split = 32
+
+    layer = tf.reshape(layer, [-1, int(int(layer.shape[1]) / (split * channels)), split, channels])
+    layer = tf.layers.conv2d(layer, 64, 6, strides=[2, 2], padding="same", activation=myActivation)
+    layer = tf.layers.conv2d(layer, 64, 5, strides=[2, 2], padding="same", activation=myActivation)
+    layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2] * layer.shape[3])])
+
+
+    #layer = tf.reshape(layer, [-1, int(int(layer.shape[1]) / channels), channels])
+    #layer = tf.layers.conv1d(layer, 64, 6, 2, padding='same', activation=myActivation)
+    #layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
+    #layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
+    #layer = tf.layers.conv1d(layer, 64, 5, 2, padding='same', activation=myActivation)
+
+    #layer = tf.reshape(layer, [-1, int(layer.shape[1] * layer.shape[2])])
     return layer
 
 #####################################################
 # Define the neural network.
 #####################################################
-def defineFCModel(networkInputLen, channels, networkOutputLen, per_process_gpu_memory_fraction=0.85, activation="lrelutanh"):
+def defineFCModel(networkInputLen, channels, networkOutputLen, per_process_gpu_memory_fraction=0.85, activation="leakytanh"):
 
     global g_activation
     g_activation = activation
@@ -55,16 +61,16 @@ def myActivation(layer, activationAlpha=0.02, dropoutRate=0.1):
         layer = tf.nn.tanh(layer)
     elif g_activation is "swish":
         layer = tf.nn.swish(layer)
-    elif g_activation is "lrelu":
-        layer = tf.nn.leaky_relu(layer)
-    elif g_activation is "relu":
-        layer = tf.nn.relu(layer)
-    elif g_activation is "sigmoid":
-        layer = tf.nn.sigmoid(layer)
-    elif g_activation is "relusigmoidspecial":
-        layer = tf.nn.sigmoid(layer) * tf.math.abs(layer + 4)
     elif g_activation is "lrelutanh":
         layer = 0.1 * tf.nn.leaky_relu(layer) + tf.nn.tanh(layer)
+    elif g_activation is "leakytanh":
+        layer = 0.001 * layer + tf.nn.tanh(layer)
+    elif g_activation is "leakysoftplus":
+        layer = tf.keras.activations.softplus(layer) + 0.001 * layer
+    elif g_activation is "leakyrely":
+        layer = tf.nn.leaky_relu(layer)
+    elif g_activation is "leakysoftmax":
+        layer = tf.keras.activations.softmax(layer) + 0.0001 * layer
     else:
         raise ValueError(f"BAD ACTIVATION {g_activation}")
 

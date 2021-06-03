@@ -31,7 +31,7 @@ class MainTrainer:
                 BATCH_INF_SIZE = 75,  # How many samples for stats purpose
                 BATCH_SIZE_INFERENCE_FULL_SOUND = 1024,  # Batch size (#samples!!) When running inference to generate full audio file
                 STATS_EVERY = 250,  # How often (skipping steps) to run inference to gather stats.
-                validationPercent = 0.15,  # e.g. 0.1 means 10% of the length of total sound will be validation
+                validationPercent = 0.25,  # e.g. 0.1 means 10% of the length of total sound will be validation
                 maxValidationSampleCount = 1000000,
                 MIN_STEPS_BETWEEN_SAVES = 2000,
                 learning_rate = 0.0002,
@@ -40,11 +40,11 @@ class MainTrainer:
                 networkOutputLen = defs.networkOutputLen,
                 encoderBullsEyeSize = 55,
                 graphName = 'latest',
-                maxTrainingSamplesInMem=25000,
-                effectiveInferenceOutputLen = 128,
+                maxTrainingSamplesInMem=15000,
+                effectiveInferenceOutputLen = 64,
                 inferenceOverlap = 8,
                 lowPassFilterSteps = 0,
-                channels = 2,
+                channels = 4,
                 uniqueSessionNumber = str(random.randint(10000000, 99000000))):
 
         global tf
@@ -272,10 +272,10 @@ class MainTrainer:
             else:
                 varDiff = math.fabs(infVar / labelVar)
 
-            errSqTimesDiff = error * varDiff * fftDiffScore
+            errSqTimesDiff = error * varDiff * (fftDiffScore ** 2)
             if (errSqTimesDiff) < 0.00000001:
                 errSqTimesDiff = 0.00000001
-            retVal = 100 / errSqTimesDiff
+            retVal = 100000000 / errSqTimesDiff
         except Exception as ex:
             pass
 

@@ -3,7 +3,7 @@ import os
 class Definitions:
 
     networkInputLen = 512
-    networkOutputLen = 128
+    networkOutputLen = 64
     WAV_FILE_PATH = 'soundInput'
     WAV_FILE_OUTPUT = 'output'
     METADATA_OUTPUT = 'metadata'
